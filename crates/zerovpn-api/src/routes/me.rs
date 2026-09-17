@@ -109,7 +109,7 @@ pub async fn export(
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct MyServerInfo {
-    /// CIDR of the WG subnet (e.g. "10.10.0.0/22"). Used by the create-
+    /// CIDR of the WG subnet (e.g. "10.0.0.0/22"). Used by the create-
     /// device dialog to render "must be inside <cidr>" hints and to
     /// pre-fill the split-tunnel allowed_ips.
     pub cidr: String,

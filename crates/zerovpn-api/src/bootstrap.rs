@@ -289,7 +289,7 @@ pub async fn ensure_default_server(pool: &PgPool, kek: &Kek) -> anyhow::Result<(
     let public_key = keys::derive_public_key(&private_key)?;
     let encrypted = kek.encrypt(private_key.as_bytes())?;
 
-    let cidr: IpNetwork = "10.10.0.0/22".parse().unwrap();
+    let cidr: IpNetwork = "10.0.0.0/22".parse().unwrap();
 
     let id = servers::create(
         pool,

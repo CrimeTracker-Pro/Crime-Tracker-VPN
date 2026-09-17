@@ -166,10 +166,9 @@ impl From<Device> for PublicDevice {
 }
 
 /// Split-tunnel AllowedIPs: every device routes only the VPN's own subnet
-/// through the tunnel (peers + the gateway); all other
-/// traffic uses the client's normal interface. Single value used by every
-/// config the API renders. Must match the server CIDR in `bootstrap.rs`.
-const DEFAULT_ALLOWED_IPS: &str = "10.10.0.0/22";
+/// through the tunnel (peers + the gateway); all other traffic uses the
+/// client's normal interface. This must be derived from the server record so
+/// a CIDR correction is reflected in every newly rendered client profile.
 
 #[utoipa::path(
     get,
@@ -472,7 +471,7 @@ pub async fn create(
     // never persisted.
     let endpoint_str = format!("{}:{}", server.endpoint_host, server.endpoint_port);
     let address_str = format!("{}/32", ip);
-    let allowed_ips = DEFAULT_ALLOWED_IPS.to_string();
+    let allowed_ips = server.cidr.to_string();
 
     let keepalive = server.persistent_keepalive as u16;
     let cfg = config::PeerConfig {
@@ -659,7 +658,7 @@ pub async fn rotate_keys(
     // current settings dictate, just with a fresh private key.
     let endpoint_str = format!("{}:{}", server.endpoint_host, server.endpoint_port);
     let address_str = format!("{}/32", device.allocated_ip.ip());
-    let allowed_ips = DEFAULT_ALLOWED_IPS.to_string();
+    let allowed_ips = server.cidr.to_string();
     let cfg = config::PeerConfig {
         private_key: &private_key,
         address: &address_str,
@@ -823,7 +822,7 @@ pub async fn redownload_conf(
     // configuration, not the one captured at create time.
     let endpoint_str = format!("{}:{}", server.endpoint_host, server.endpoint_port);
     let address_str = format!("{}/32", device.allocated_ip.ip());
-    let allowed_ips = DEFAULT_ALLOWED_IPS.to_string();
+    let allowed_ips = server.cidr.to_string();
     let cfg = config::PeerConfig {
         private_key: &private_key,
         address: &address_str,
@@ -1004,10 +1003,9 @@ fn render_profile(
     Ok((profile, config, qr_svg))
 }
 
-/// Split-tunnel AllowedIPs (the VPN subnet) — the default for an
-/// app-provisioned device. Mirrors `DEFAULT_ALLOWED_IPS`.
-fn default_allowed_ips() -> Vec<String> {
-    vec!["10.10.0.0/22".to_string()]
+/// Split-tunnel AllowedIPs (the VPN subnet) for an app-provisioned device.
+fn default_allowed_ips(server_cidr: impl ToString) -> Vec<String> {
+    vec![server_cidr.to_string()]
 }
 
 #[utoipa::path(
@@ -1058,7 +1056,7 @@ pub async fn connect(
 
         let ip = device.allocated_ip.ip();
         let address = format!("{}/32", ip);
-        let allowed_ips = default_allowed_ips();
+        let allowed_ips = default_allowed_ips(server.cidr);
         let endpoint = format!("{}:{}", server.endpoint_host, server.endpoint_port);
         let keepalive = server.persistent_keepalive as u16;
         let (profile, config, qr_svg) = render_profile(ProfileParams {
@@ -1206,7 +1204,7 @@ pub async fn connect(
     .await?;
 
     let address = format!("{}/32", ip);
-    let allowed_ips = default_allowed_ips();
+    let allowed_ips = default_allowed_ips(server.cidr);
     let endpoint = format!("{}:{}", server.endpoint_host, server.endpoint_port);
     let keepalive = server.persistent_keepalive as u16;
     let (profile, config, qr_svg) = render_profile(ProfileParams {

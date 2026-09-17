@@ -1833,7 +1833,7 @@ pub struct AdminServer {
     pub endpoint_host: String,
     pub endpoint_port: i32,
     pub public_key: String,
-    /// CIDR rendered as a string ("10.10.0.0/22").
+    /// CIDR rendered as a string ("10.0.0.0/22").
     pub cidr: String,
     pub mtu: i32,
     pub is_active: bool,
