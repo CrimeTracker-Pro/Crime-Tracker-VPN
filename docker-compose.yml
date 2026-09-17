@@ -24,6 +24,7 @@ x-logging: &default-logging
 
 services:
   traefik:
+    profiles: [internal-proxy]
     image: traefik:v3.3
     <<: [*default-restart, *default-logging]
     env_file: .env
@@ -70,6 +71,7 @@ services:
       - no-new-privileges:true
 
   frontend:
+    container_name: zerovpn-frontend
     image: ${ZEROVPN_REGISTRY:-ghcr.io/bhadri01}/zerovpn-frontend:${ZEROVPN_IMAGE_TAG:-latest}
     <<: [*default-restart, *default-logging]
     networks:
@@ -100,6 +102,7 @@ services:
   # `modprobe`, no /lib/modules, no SYS_MODULE). Still validate the tunnel on
   # your host once (`docker compose logs api` → "wg interface up"; `wg show wg0`).
   api:
+    container_name: zerovpn-api
     image: ${ZEROVPN_REGISTRY:-ghcr.io/bhadri01}/zerovpn-api:${ZEROVPN_IMAGE_TAG:-latest}
     <<: [*default-restart, *default-logging]
     env_file: .env
@@ -259,6 +262,8 @@ volumes:
 
 networks:
   web:
+    name: traefik
+    external: true
   backend:
     internal: false
     driver_opts:

@@ -1,4 +1,5 @@
 use std::{
+    net::Ipv4Addr,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -118,10 +119,19 @@ async fn read_conf_private_key(path: &Path) -> Option<String> {
 
 /// (Re)write `wg0.conf` for the default server from `private_key`. Idempotent —
 /// safe on every boot; only the interface bring-up consumes the file.
-async fn write_server_conf(private_key: &str, listen_port: i32) {
+async fn write_server_conf(private_key: &str, listen_port: i32, cidr: IpNetwork) {
     let conf_path = server_conf_path();
     let interface = std::env::var("ZEROVPN_WG__INTERFACE").unwrap_or_else(|_| "wg0".into());
-    let server_address = "10.10.0.1/22";
+    let server_address = match cidr {
+        IpNetwork::V4(network) => {
+            let first_host = Ipv4Addr::from(u32::from(network.network()) + 1);
+            format!("{first_host}/{}", network.prefix())
+        }
+        // IPv6 server networks are not currently provisioned, but retain the
+        // configured prefix if one is added rather than falling back to a
+        // hard-coded IPv4 range.
+        IpNetwork::V6(network) => format!("{}/{}", network.network(), network.prefix()),
+    };
     // No PostUp/PostDown: forwarding/NAT/DNS-DNAT is applied best-effort by
     // `ensure_wg_interface_up` after bring-up, so a failing iptables rule can't
     // make wg-quick roll the whole interface back.
@@ -249,7 +259,7 @@ pub async fn ensure_default_server(pool: &PgPool, kek: &Kek) -> anyhow::Result<(
     let (endpoint_host, listen_port) = resolve_server_endpoint();
     let conf_path = server_conf_path();
 
-    if let Some((id, enc)) = servers::default_key_state(pool).await? {
+    if let Some((id, enc, cidr)) = servers::default_key_state(pool).await? {
         // Dev convenience: re-sync the default server's endpoint from the
         // configured value on each boot so a changing Wi-Fi/LAN IP is picked
         // up automatically. In prod we leave admin-edited endpoints untouched.
@@ -294,13 +304,11 @@ pub async fn ensure_default_server(pool: &PgPool, kek: &Kek) -> anyhow::Result<(
             },
         };
 
-        // Restore wg0.conf only when it is missing or out of sync with the DB
-        // key (e.g. after a wg_config volume loss) — avoids churning the file on
-        // every normal boot.
-        if read_conf_private_key(&conf_path).await.as_deref() != Some(private_key.as_str()) {
-            write_server_conf(&private_key, listen_port).await;
-            info!(server_id = %id, "restored wg0.conf from the DB-stored server key");
-        }
+        // Rebuild the derived config from the DB on every boot.  Besides the
+        // key, it contains the server CIDR; keeping it in sync makes a direct
+        // CIDR correction take effect on the next service restart.
+        write_server_conf(&private_key, listen_port, cidr).await;
+        info!(server_id = %id, "restored wg0.conf from the DB-stored server record");
         return Ok(());
     }
 
@@ -336,7 +344,7 @@ pub async fn ensure_default_server(pool: &PgPool, kek: &Kek) -> anyhow::Result<(
     .await?;
 
     if read_conf_private_key(&conf_path).await.as_deref() != Some(private_key.as_str()) {
-        write_server_conf(&private_key, listen_port).await;
+        write_server_conf(&private_key, listen_port, cidr).await;
     }
 
     info!(server_id = %id, public_key = %public_key, "default server created");

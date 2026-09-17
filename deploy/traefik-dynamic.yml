@@ -27,11 +27,11 @@ http:
     api:
       loadBalancer:
         servers:
-          - url: "http://api:8080"
+          - url: "http://zerovpn-api:8080"
     frontend:
       loadBalancer:
         servers:
-          - url: "http://frontend:80"
+          - url: "http://zerovpn-frontend:80"
 
   middlewares:
     # Security headers applied to every response.

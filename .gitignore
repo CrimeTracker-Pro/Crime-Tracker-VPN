@@ -70,3 +70,7 @@ tmp/
 # Python bytecode
 __pycache__/
 *.pyc
+
+# local backups
+*.bak
+.local-backups
