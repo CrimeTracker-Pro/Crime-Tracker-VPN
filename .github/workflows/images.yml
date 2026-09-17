@@ -41,6 +41,11 @@ jobs:
             echo "ZEROVPN_IMAGE_TAG=latest" >> "$GITHUB_ENV"
           fi
 
+      # Compose validates env_file entries even for `push`. CI images do not
+      # need runtime secrets; an empty file satisfies that config reference.
+      - name: Prepare empty runtime env file
+        run: touch .env
+
       - name: Build + push (moving tag)
         run: |
           docker compose -f docker-compose.yml -f docker-compose.build.yml build
