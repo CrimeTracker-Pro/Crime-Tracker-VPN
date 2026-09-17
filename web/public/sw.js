@@ -1,5 +1,5 @@
 /*
- * ZeroVPN service worker.
+ * Crime Tracker VPN service worker.
  *
  * Scope is intentionally minimal: it exists to make the app installable as a
  * PWA and to display + handle clicks on OS notifications. There is no Web Push

@@ -27,6 +27,7 @@ services:
 
   # ── API + WireGuard server (hot-reload) ────────────────────────────────────
   api-dev:
+    container_name: crimetracker-vpn-api-dev
     build:
       context: .
       dockerfile: deploy/Dockerfile.dev
@@ -85,6 +86,7 @@ services:
   # namespace its ZMQ publisher (0.0.0.0:5555) is reachable by the api at
   # 127.0.0.1:5555 — see api-dev's SUBSCRIBER_CONNECT override above.
   worker-dev:
+    container_name: crimetracker-vpn-worker-dev
     build:
       context: .
       dockerfile: deploy/Dockerfile.dev
@@ -98,7 +100,7 @@ services:
       # Tell the server_health emitter which container to scrape for
       # CPU%/MEM/Net I/O. Matches what `docker stats` would show for the
       # VPN host container. Unset → falls back to sysinfo (host-wide).
-      ZEROVPN_WORKER__VPN_HOST_CONTAINER: zerovpn-api-dev-1
+      ZEROVPN_WORKER__VPN_HOST_CONTAINER: crimetracker-vpn-api-dev
       CARGO_TERM_COLOR: always
     command: ["watchexec", "--restart", "--poll", "1s", "-w", "crates", "--", "cargo", "run", "-p", "zerovpn-worker"]
     # Share api-dev's network namespace so wg0 + the api's loopback are visible.
@@ -124,6 +126,7 @@ services:
 
   # ── Web (Vite dev server, hot-reload) ──────────────────────────────────────
   web-dev:
+    container_name: crimetracker-vpn-web-dev
     image: node:24-bookworm-slim
     profiles: [dev]
     working_dir: /app

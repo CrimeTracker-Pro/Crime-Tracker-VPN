@@ -1,6 +1,6 @@
 {
-  "name": "ZeroVPN",
-  "short_name": "ZeroVPN",
+  "name": "Crime Tracker VPN",
+  "short_name": "Crime Tracker VPN",
   "description": "Self-hosted WireGuard VPN manager — devices, live bandwidth, and access control.",
   "id": "/",
   "start_url": "/app",

@@ -282,7 +282,7 @@ async fn poll_once(
     let pk_index = devices::pubkey_index(pool).await?;
 
     // Per-server rollup. `wg show dump` is per-interface but a single
-    // ZeroVPN deployment can map multiple servers onto one interface, so
+    // Crime Tracker VPN deployment can map multiple servers onto one interface, so
     // we key by server_id from the pubkey index.
     let mut srv_totals: HashMap<Uuid, (u64, u64, u32, u32, u32)> = HashMap::new();
     let secs = interval.as_secs().max(1);

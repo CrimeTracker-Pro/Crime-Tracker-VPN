@@ -246,7 +246,7 @@ pub async fn google_callback(
     let user_policy = load_user_policy(&state.pool).await;
 
     // 2FA gate. Google sign-in verifies the *Google* identity, but if the
-    // ZeroVPN account has its own TOTP enabled we still require it — the
+    // Crime Tracker VPN account has its own TOTP enabled we still require it — the
     // Google path must not be a way to skip 2FA. Hold a half-authenticated
     // "pending TOTP" session (NOT the real one) and make the client finish
     // the challenge via `/auth/google/verify-totp`.

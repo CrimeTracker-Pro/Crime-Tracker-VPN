@@ -64,7 +64,7 @@ This file is the reference that lives with the code.
 
 ## Logging & privacy
 
-The "no-logs" posture was deliberately reversed — ZeroVPN now retains full
+The "no-logs" posture was deliberately reversed — Crime Tracker VPN now retains full
 operational logs for admin visibility. See CHANGELOG → "Policy reversal —
 full logging system" for the decision record. Concretely:
 

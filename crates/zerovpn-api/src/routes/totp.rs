@@ -14,7 +14,7 @@ use crate::{
     state::AppState,
 };
 
-const ISSUER: &str = "ZeroVPN";
+const ISSUER: &str = "Crime Tracker VPN";
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SetupResponse {

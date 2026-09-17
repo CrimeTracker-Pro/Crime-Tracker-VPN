@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 #[derive(Parser)]
-#[command(name = "zerovpn-cli", version, about = "ZeroVPN admin CLI")]
+#[command(name = "zerovpn-cli", version, about = "Crime Tracker VPN admin CLI")]
 struct Cli {
     #[command(subcommand)]
     command: Cmd,

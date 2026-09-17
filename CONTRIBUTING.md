@@ -1,6 +1,6 @@
-# Contributing to ZeroVPN
+# Contributing to Crime Tracker VPN
 
-Thanks for your interest in improving ZeroVPN! This guide covers how to get set up and what
+Thanks for your interest in improving Crime Tracker VPN! This guide covers how to get set up and what
 we expect before a change is merged.
 
 ## Getting started

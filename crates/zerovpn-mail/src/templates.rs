@@ -99,7 +99,7 @@ struct SuspiciousLoginText<'a> {
 
 impl Email for SuspiciousLogin<'_> {
     fn subject(&self) -> &'static str {
-        "New sign-in to your ZeroVPN account"
+        "New sign-in to your Crime Tracker VPN account"
     }
     fn render_html(&self) -> Result<String, askama::Error> {
         SuspiciousLoginHtml {

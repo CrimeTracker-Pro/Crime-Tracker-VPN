@@ -14,7 +14,7 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* ── ZeroVPN — Swiss/utilitarian system ─────────────────────────────────
+/* ── Crime Tracker VPN — Swiss/utilitarian system ─────────────────────────────────
    Tokens map the design's --bg / --surface / --ink / --line / --accent
    layers onto shadcn's --background / --card / --foreground / --border /
    --primary surface so every existing shadcn primitive picks up the new
@@ -847,7 +847,7 @@
   background-size: 16px 16px;
 }
 
-/* ── ZeroVPN Swiss kit ─────────────────────────────────────────────────
+/* ── Crime Tracker VPN Swiss kit ─────────────────────────────────────────────────
    Recurring building blocks from the design prototype, exposed as plain
    class names so JSX stays terse. Everything resolves through the same
    tokens defined above; no hard-coded values that need follow-up themes. */

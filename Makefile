@@ -10,11 +10,8 @@ COMPOSE     := docker compose
 # `-f docker-compose.mail.yml` (MailHog) back into the dev targets and point
 # ZEROVPN_SMTP__HOST=mailhog / PORT=1025.
 COMPOSE_DEV := $(COMPOSE) -f docker-compose.yml --profile dev
-# App images (api/worker/frontend) are pre-built + pushed to a
-# registry; the base compose references them by tag (image:). This overlay
-# re-adds `build:` so they can be built/pushed locally or in CI. A *deploy* host
-# uses the base file only → it pulls, never builds. Set ZEROVPN_REGISTRY and
-# ZEROVPN_IMAGE_TAG in `.env` to control the tag.
+# App images (api/worker/frontend) are built locally. The overlay provides
+# `build:` while the base compose names the resulting local images.
 COMPOSE_BUILD := $(COMPOSE) -f docker-compose.yml -f docker-compose.build.yml
 # Dev *containers*: run api/worker/web in Linux with hot-reload + a real
 # (userspace) WireGuard tunnel. The overlay gates the prod api/worker/frontend/
@@ -26,7 +23,7 @@ help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage: make \033[36m<target>\033[0m\n\nTargets:\n"} /^[a-zA-Z_-]+:.*?##/ {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 .PHONY: setup
-setup: ## One-time: copy .env template + generate secrets (build/pull happens in up/up-prod)
+setup: ## One-time: copy .env template + generate secrets (build happens in up/up-prod)
 	@if [ ! -f .env ]; then \
 		cp .env.example .env; \
 		echo "Created .env from .env.example."; \
@@ -40,40 +37,28 @@ setup: ## One-time: copy .env template + generate secrets (build/pull happens in
 		echo ""; \
 	fi
 	@./scripts/init-secrets.sh
-	@echo "Secrets ready. Local dev: 'make up' (builds images). Prod: set"
-	@echo "ZEROVPN_REGISTRY/ZEROVPN_IMAGE_TAG in .env, then 'make up-prod' (pulls)."
+	@echo "Secrets ready. Run 'make up' or 'make up-prod' to build local images."
 
 .PHONY: up
 up: ## Start the dev stack locally; builds images if missing
 	$(COMPOSE_BUILD) up -d
 
 .PHONY: up-prod
-up-prod: ## Deploy the prod stack from PRE-BUILT images (pull, never build)
-	$(COMPOSE) pull
-	$(COMPOSE) up -d
+up-prod: ## Build local images and start the production-shaped stack
+	$(COMPOSE_BUILD) up -d --build
 
-# Registry + git SHA for versioned image tags. Every build is tagged both
-# with $ZEROVPN_IMAGE_TAG (deploy pointer, usually `latest`) and with the
-# commit SHA — so a bad deploy rolls back by setting ZEROVPN_IMAGE_TAG=sha-…
-# in the host's .env and re-running `make up-prod`.
-REGISTRY  := $(or $(shell grep -E '^ZEROVPN_REGISTRY=' .env 2>/dev/null | cut -d= -f2),ghcr.io/crimetracker-pro)
+# Local image names + git SHA for optional versioned local tags.
+REGISTRY  := $(or $(shell grep -E '^ZEROVPN_REGISTRY=' .env 2>/dev/null | cut -d= -f2),local)
 BASE_TAG  := $(or $(shell grep -E '^ZEROVPN_IMAGE_TAG=' .env 2>/dev/null | cut -d= -f2),latest)
 GIT_SHA   := $(shell git rev-parse --short HEAD)
-APP_IMAGES := zerovpn-api zerovpn-worker zerovpn-frontend
+APP_IMAGES := crimetracker-vpn-api crimetracker-vpn-worker crimetracker-vpn-frontend
 
 .PHONY: images
-images: ## Build the app images; tags: $ZEROVPN_IMAGE_TAG + sha-<git SHA>
+images: ## Build local app images; tags: $ZEROVPN_IMAGE_TAG + sha-<git SHA>
 	$(COMPOSE_BUILD) build
 	@for img in $(APP_IMAGES); do \
 		docker tag $(REGISTRY)/$$img:$(BASE_TAG) $(REGISTRY)/$$img:sha-$(GIT_SHA); \
 		echo "tagged $(REGISTRY)/$$img:sha-$(GIT_SHA)"; \
-	done
-
-.PHONY: push
-push: ## Push the built app images (both tags) to the registry (docker login first)
-	$(COMPOSE_BUILD) push
-	@for img in $(APP_IMAGES); do \
-		docker push $(REGISTRY)/$$img:sha-$(GIT_SHA); \
 	done
 
 .PHONY: down

@@ -445,9 +445,9 @@ function SignOutEverywherePanel() {
 function downloadRecoveryCodes(codes: string[], email: string | undefined) {
   const today = new Date().toISOString().slice(0, 10)
   const localPart = email?.split("@")[0]?.replace(/[^a-z0-9_-]/gi, "") || "user"
-  const filename = `zerovpn-recovery-codes-${localPart}-${today}.txt`
+  const filename = `crimetracker-vpn-recovery-codes-${localPart}-${today}.txt`
   const body = [
-    "ZeroVPN — Two-Factor Authentication Recovery Codes",
+    "Crime Tracker VPN — Two-Factor Authentication Recovery Codes",
     `Account: ${email ?? "(unknown)"}`,
     `Generated: ${new Date().toISOString()}`,
     "",

@@ -2,7 +2,7 @@
 
 ## Dev vs. prod isolation
 
-ZeroVPN ships a prod `docker-compose.yml` + single `.env`. Dev vs. prod is driven by `.env` values; the only dev-only extra is MailHog, layered in from `docker-compose.mail.yml` by the dev `make` targets (never by `make up-prod`):
+Crime Tracker VPN ships a prod `docker-compose.yml` + single `.env`. Dev vs. prod is driven by `.env` values; the only dev-only extra is MailHog, layered in from `docker-compose.mail.yml` by the dev `make` targets (never by `make up-prod`):
 
 | | dev | prod |
 |---|---|---|
@@ -19,7 +19,7 @@ ZeroVPN ships a prod `docker-compose.yml` + single `.env`. Dev vs. prod is drive
 
 ```
 git clone <this repo>
-cd zerovpn
+cd Crime-Tracker-VPN
 make setup                                  # copies .env.example → .env, generates secrets, builds images
 make up                                     # docker compose --profile dev up -d
 make migrate
@@ -65,15 +65,15 @@ When to use which:
 
 ```
 git clone <this repo>
-cd zerovpn
+cd Crime-Tracker-VPN
 make setup                                   # copies .env.example → .env, generates secrets
 $EDITOR .env                                 # see "going to production" block at the top of .env
-make up-prod                                 # docker compose pull && up -d (pulls pre-built images)
+make up-prod                                 # build local images and start
 make migrate
 make bootstrap-admin EMAIL=admin@yourdomain
 ```
 
-The `.env.example` header lists the values that must flip for prod (`ZEROVPN_ENVIRONMENT`, `ZEROVPN_DOMAIN`/`ZEROVPN_PUBLIC_URL`, `ZEROVPN_CERT_RESOLVER=le`, `ZEROVPN_ACME_EMAIL`, the `ZEROVPN_SMTP__*` block, `ZEROVPN_WG__SERVER_ENDPOINT`, `ZEROVPN_REGISTRY`/`ZEROVPN_IMAGE_TAG`, and `RUST_LOG`).
+The `.env.example` header lists the values that must flip for prod (`ZEROVPN_ENVIRONMENT`, `ZEROVPN_DOMAIN`/`ZEROVPN_PUBLIC_URL`, `ZEROVPN_CERT_RESOLVER=le`, `ZEROVPN_ACME_EMAIL`, the `ZEROVPN_SMTP__*` block, `ZEROVPN_WG__SERVER_ENDPOINT`, and `RUST_LOG`).
 
 `ZEROVPN_DOMAIN` must resolve to this host before `make up-prod`, or Traefik's first Let's Encrypt issuance attempt will fail. The api will also refuse to boot if `ZEROVPN_DOMAIN` is `localhost` or a `REPLACE_*` placeholder — see [validate_production_config in crates/zerovpn-api/src/main.rs](../crates/zerovpn-api/src/main.rs).
 
@@ -116,7 +116,7 @@ The api holds `CAP_NET_ADMIN` + `/dev/net/tun` to do this (the security trade-of
 
 ## Stats pipeline & disk growth
 
-ZeroVPN runs in "every-tick kept forever" mode by default (migration 5). At each `ZEROVPN_STATS_INTERVAL_SECS` tick (default 1 second) the worker:
+Crime Tracker VPN runs in "every-tick kept forever" mode by default (migration 5). At each `ZEROVPN_STATS_INTERVAL_SECS` tick (default 1 second) the worker:
 
 1. Runs `wg show <iface> dump` (or the dev simulator), computes per-peer RX/TX deltas.
 2. Inserts **one row per active peer** into `bandwidth_samples`.
@@ -182,33 +182,30 @@ make up                                # or make up-prod
 5. `make up` — db comes up with the restored data; the api reconstructs `wg0.conf`
    from the DB and re-adds all peers.
 
-## Building & publishing images
+## Building local images
 
-App images (`api`, `worker`, `frontend`) are pre-built and pushed to a registry; the base `docker-compose.yml` references them by tag (`image:`), so a deploy host **pulls** them and never builds. CI does this automatically (`.github/workflows/images.yml` → GHCR on push to `main`/tags). To do it by hand:
-
-```
-docker login ghcr.io                 # or your registry
-export ZEROVPN_REGISTRY=ghcr.io/<owner>  ZEROVPN_IMAGE_TAG=v1.2.3   # (also in .env)
-make images                          # docker compose -f …build.yml build  (tags as $REGISTRY/zerovpn-*:$TAG)
-make push                            # pushes them
-```
-
-The `build:` blocks live in `docker-compose.build.yml` (the base file is image-only). `make up` (local dev) still builds via that overlay; `make up-prod` only pulls.
-
-## Upgrading (pull pre-built images)
+App images (`api`, `worker`, `frontend`) are built locally. The image workflow validates builds but has no registry login or push step. No image is published to GitHub.
 
 ```
-# CI already built + pushed the new images. On the deploy host:
-$EDITOR .env       # bump ZEROVPN_IMAGE_TAG to the new version (or keep :latest)
-make up-prod       # docker compose pull && up -d  — pulls the new images
+make images                          # builds local/crimetracker-vpn-* images
+```
+
+The `build:` blocks live in `docker-compose.build.yml`. Both `make up` and `make up-prod` use that overlay to build locally.
+
+## Upgrading (rebuild local images)
+
+```
+# On the deployment host:
+git pull
+make up-prod       # rebuilds and restarts local images
 make migrate       # applies any new migrations
 ```
 
-For zero-downtime upgrades, drain peers off this server first by toggling **maintenance mode** in the admin UI, then `docker compose pull api worker frontend && docker compose up -d --no-deps api worker frontend`.
+For minimal-disruption upgrades, drain peers off this server first by toggling **maintenance mode** in the admin UI, then rebuild and restart the services.
 
 ## Security review checklist (before exposing to the internet)
 
-- [ ] Brought up via `make up-prod` (not `make up`) — `make up-prod` uses the base compose alone (no `docker-compose.mail.yml`) so MailHog never comes up
+- [ ] Brought up via `make up-prod` (not `make up`) — no MailHog overlay is included
 - [ ] `ZEROVPN_ENVIRONMENT=production` in `.env`; the api refuses to boot otherwise
 - [ ] `ZEROVPN_KEK` is a fresh 32-byte base64 random, distinct from any value previously used in dev (the prod boot check rejects `CHANGEME` and short values; rotate via the "Rotating secrets" section before exposing publicly)
 - [ ] `ZEROVPN_DOMAIN` set to a real domain that already resolves to this host (LE issuance otherwise fails on first boot)

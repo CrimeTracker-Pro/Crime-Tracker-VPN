@@ -3,24 +3,22 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>ZeroVPN — Run your own VPN, without running a fleet</title>
+    <title>Crime Tracker VPN — Run your own VPN, without running a fleet</title>
     <meta
       name="description"
-      content="ZeroVPN is a self-hosted WireGuard control plane you deploy in ~15 minutes. Manage devices, peers, and admin policy from one fast console — live telemetry, full audit trails, no third-party SaaS in the data path. Open source, AGPL-3.0."
+      content="Crime Tracker VPN is a self-hosted WireGuard control plane you deploy in ~15 minutes. Manage devices, peers, and admin policy from one fast console — live telemetry, full audit trails, no third-party SaaS in the data path. Open source, AGPL-3.0."
     />
-    <link rel="canonical" href="https://bhadri01.github.io/ZeroVPN/" />
     <meta name="theme-color" content="#fafaf7" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)" />
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
 
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="ZeroVPN — self-hosted WireGuard, boring by design" />
+    <meta property="og:title" content="Crime Tracker VPN — self-hosted WireGuard, boring by design" />
     <meta
       property="og:description"
       content="A transparent, self-hostable WireGuard control plane. Devices, live telemetry, full admin visibility. Deploy in ~15 minutes. AGPL-3.0."
     />
-    <meta property="og:url" content="https://bhadri01.github.io/ZeroVPN/" />
     <meta name="twitter:card" content="summary" />
 
     <!-- Anti-FOUC theme bootstrap: set the class before first paint. -->
@@ -43,14 +41,14 @@
     <!-- ── Nav ─────────────────────────────────────────────────────────── -->
     <header class="nav">
       <div class="zv-wrap nav-inner">
-        <a href="#top" class="wordmark" aria-label="ZeroVPN home">
+        <a href="#top" class="wordmark" aria-label="Crime Tracker VPN home">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
             <line x1="1" y1="10" x2="5.5" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
             <line x1="14.5" y1="10" x2="19" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
             <circle cx="10" cy="10" r="4.25" stroke="currentColor" stroke-width="1.5" />
             <circle cx="10" cy="10" r="1.6" fill="var(--primary)" />
           </svg>
-          <span>ZER<span class="zero">0</span>VPN</span>
+          <span>Crime Tracker VPN</span>
         </a>
 
         <nav class="nav-links" id="nav-links" aria-label="Primary">
@@ -171,14 +169,14 @@
         </div>
       </section>
 
-      <!-- ── 01 · What is ZeroVPN ──────────────────────────────────────── -->
+      <!-- ── 01 · What is Crime Tracker VPN ──────────────────────────────── -->
       <section id="what">
         <div class="zv-wrap">
           <div class="section-head">
             <span class="eyebrow"><span class="num">01</span> What is it</span>
             <h2>A control plane for your own WireGuard network.</h2>
             <p>
-              ZeroVPN manages devices, peers, IP allocation, and admin policy for
+              Crime Tracker VPN manages devices, peers, IP allocation, and admin policy for
               a WireGuard network you host yourself — and puts a live console over
               the whole fleet. A Rust API and worker, a React single-page app, and
               one Docker Compose stack. No accounts on someone else's servers.
@@ -295,7 +293,7 @@
           </div>
 
           <div class="diagram" style="margin-bottom: 2rem">
-            <svg viewBox="0 0 720 300" width="100%" role="img" aria-label="Architecture diagram of the ZeroVPN stack">
+            <svg viewBox="0 0 720 300" width="100%" role="img" aria-label="Architecture diagram of the Crime Tracker VPN stack">
               <!-- edge -->
               <rect class="arch-box" x="20" y="120" width="120" height="60" rx="2" />
               <text class="arch-t" x="80" y="146" text-anchor="middle">Traefik</text>
@@ -418,7 +416,7 @@
           <ul class="caveats">
             <li><b>Not zero-knowledge.</b> The server generates and stores each device's WireGuard keypair. A client-only key mode was considered and deliberately removed; keys are always stored server-side.</li>
             <li><b>Single key-encryption key.</b> The KEK is provided once via env/secret — there's no HSM and no automatic rotation. Lose it and the sealed secrets can't be recovered.</li>
-            <li><b>Split-tunnel only.</b> Devices route the VPN subnet, not all traffic. ZeroVPN is a private-network VPN, not a full-tunnel or anonymity tool.</li>
+            <li><b>Split-tunnel only.</b> Devices route the VPN subnet, not all traffic. Crime Tracker VPN is a private-network VPN, not a full-tunnel or anonymity tool.</li>
             <li><b>Rate limiting is per-email.</b> Login throttling keys on the email address, not the source IP.</li>
             <li><b>Google sign-in bypasses TOTP.</b> If you require TOTP everywhere, don't enable the Google link.</li>
             <li><b>The API runs elevated.</b> Because it brings up the WireGuard interface in its own container, the API holds <code class="mono">NET_ADMIN</code> and <code class="mono">/dev/net/tun</code>.</li>
@@ -452,9 +450,9 @@ make up-dev
 <span class="k">→</span> API   http://localhost:18080
 <span class="k">→</span> Mail  http://localhost:8025</pre>
               <p style="color: var(--muted-foreground); font-size: 0.9rem; margin-top: 1rem">
-                Production runs a build-push-pull model: <code class="mono">make images &amp;&amp; make push</code>,
-                then on the host <code class="mono">make setup</code>, edit <code class="mono">.env</code>,
-                and <code class="mono">make up-prod</code>. See the
+                Production builds images locally: run <code class="mono">make setup</code>,
+                edit <code class="mono">.env</code>, and use <code class="mono">make up-prod</code>.
+                See the
                 <a class="accent" href="./runbook.md">runbook</a>.
               </p>
             </div>
@@ -494,7 +492,7 @@ make up-dev
 
           <div class="faq">
             <details open>
-              <summary>What does ZeroVPN log about my traffic?</summary>
+              <summary>What does Crime Tracker VPN log about my traffic?</summary>
               <div class="answer">Operational metadata only — device lifecycle events, WireGuard handshake and endpoint history, per-device byte counters, sign-ins, and the admin audit trail. It never inspects packet contents, never logs DNS queries, and never records destination IPs or browsing history. Retention is operator-tunable and defaults to indefinite.</div>
             </details>
             <details>
@@ -527,14 +525,14 @@ make up-dev
       <div class="zv-wrap">
         <div class="foot-grid">
           <div>
-            <a href="#top" class="wordmark" aria-label="ZeroVPN">
+            <a href="#top" class="wordmark" aria-label="Crime Tracker VPN">
               <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                 <line x1="1" y1="10" x2="5.5" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
                 <line x1="14.5" y1="10" x2="19" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
                 <circle cx="10" cy="10" r="4.25" stroke="currentColor" stroke-width="1.5" />
                 <circle cx="10" cy="10" r="1.6" fill="var(--primary)" />
               </svg>
-              <span>ZER<span class="zero">0</span>VPN</span>
+              <span>Crime Tracker VPN</span>
             </a>
             <p style="color: var(--muted-foreground); font-size: 0.88rem; margin-top: 0.9rem; max-width: 22rem">
               A transparent, self-hostable WireGuard control plane. Your tunnel, your box, your logs.

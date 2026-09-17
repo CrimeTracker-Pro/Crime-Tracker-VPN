@@ -6,7 +6,7 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 
 /* ── Logomark / Wordmark ───────────────────────────────────────────────
-   ZeroVPN brand: a square 0-with-a-slash drawn from hairlines. The "0"
+   Crime Tracker VPN brand: a square 0-with-a-slash drawn from hairlines. The "0"
    in ZER0VPN tints to accent so the mark reads even at 12px. */
 
 export function Logomark({

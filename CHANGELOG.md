@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to ZeroVPN are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [SemVer](https://semver.org/).
+All notable changes to Crime Tracker VPN are documented here. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [SemVer](https://semver.org/).
 
 ## [0.1.0] — 2026-05-07 — Phase 1A Foundation
 

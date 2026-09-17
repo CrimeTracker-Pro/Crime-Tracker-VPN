@@ -119,7 +119,7 @@ export function TopBar({
           className="text-muted-foreground flex min-w-0 items-center gap-2 font-mono text-[12px]"
         >
           {crumbs.length === 0 ? (
-            <span className="text-foreground truncate font-medium">ZeroVPN</span>
+            <span className="text-foreground truncate font-medium">Crime Tracker VPN</span>
           ) : (
             crumbs.map((c, i) => {
               const last = i === crumbs.length - 1

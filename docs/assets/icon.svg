@@ -1,8 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="ZeroVPN">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Crime Tracker VPN">
   <!-- Full-bleed dark background so the icon works as a maskable PWA icon
        (the mark below sits well within the centre 80% safe zone). -->
   <rect width="512" height="512" fill="#0a0a0a"/>
-  <!-- Bold "Z" in the lime accent — the ZeroVPN mark. -->
+  <!-- Legacy geometric mark retained during the Crime Tracker VPN text rebrand. -->
   <path d="M168 180 H344 L168 332 H344"
         fill="none" stroke="#C6FF3D" stroke-width="40"
         stroke-linecap="round" stroke-linejoin="round"/>

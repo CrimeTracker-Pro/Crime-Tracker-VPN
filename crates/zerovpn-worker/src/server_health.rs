@@ -76,8 +76,8 @@ pub async fn run(pool: PgPool, tx: mpsc::Sender<(String, Event)>) {
     let started = Instant::now();
 
     // Name of the container whose CPU/MEM/Net we want to report. In dev
-    // compose this is `zerovpn-api-dev-1`; the main compose names it
-    // `zerovpn-api`. Empty / unset → docker stats disabled, fall back
+    // compose this is `crimetracker-vpn-api-dev`; the main compose names it
+    // `crimetracker-vpn-api`. Empty / unset → docker stats disabled, fall back
     // to sysinfo.
     let target_container = std::env::var("ZEROVPN_WORKER__VPN_HOST_CONTAINER")
         .ok()

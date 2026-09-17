@@ -93,7 +93,7 @@ export function AppSidebar() {
             if (isMobile) setOpenMobile(false)
           }}
           className="flex h-12 items-center justify-center font-mono text-xs font-medium tracking-[0.04em]"
-          aria-label="ZeroVPN"
+          aria-label="Crime Tracker VPN"
         >
           {collapsed ? <Logomark size={18} /> : <Wordmark size={12} />}
         </Link>

@@ -1,4 +1,4 @@
-<!-- Thanks for contributing to ZeroVPN! -->
+<!-- Thanks for contributing to Crime Tracker VPN! -->
 
 ## What & why
 

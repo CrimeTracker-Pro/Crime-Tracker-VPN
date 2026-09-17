@@ -1,11 +1,11 @@
-ZEROVPN
+CRIME TRACKER VPN
 ────────────────────────────────────────
 
 SECURITY · NEW SIGN-IN
 
 New sign-in detected
 
-A successful sign-in to your ZeroVPN account was just
+A successful sign-in to your Crime Tracker VPN account was just
 observed from a network we haven't seen before.
 
   Account  : {{ email }}
@@ -15,13 +15,13 @@ observed from a network we haven't seen before.
 {% endif %}
 If this was you, no action needed.
 
-If this wasn't you, change your password immediately
-and sign out of every other session:
+If this wasn't you, secure your Google account immediately
+and sign out of every other VPN session:
 
   {{ security_link }}
 
 —
 You're receiving this email because a sign-in from a
-new IP prefix was detected on your ZeroVPN account.
+new IP prefix was detected on your Crime Tracker VPN account.
 
-ZeroVPN · self-hosted WireGuard
+Crime Tracker VPN · self-hosted WireGuard

@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security vulnerability
-    url: https://github.com/bhadri01/ZeroVPN/security/advisories/new
+    url: https://github.com/CrimeTracker-Pro/Crime-Tracker-VPN/security/advisories/new
     about: Report security issues privately — never in a public issue.
   - name: Documentation & FAQ
-    url: https://bhadri01.github.io/ZeroVPN/
+    url: https://github.com/CrimeTracker-Pro/Crime-Tracker-VPN#readme
     about: Features, architecture, security posture, and frequently asked questions.

@@ -791,7 +791,7 @@ function formatCapGb(bytes: number): string {
 }
 
 function downloadConfig(name: string, config: string) {
-  const safe = name.replace(/[^a-z0-9_-]+/gi, "-").toLowerCase() || "zerovpn"
+  const safe = name.replace(/[^a-z0-9_-]+/gi, "-").toLowerCase() || "crimetracker-vpn"
   const blob = new Blob([config], { type: "text/plain" })
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")

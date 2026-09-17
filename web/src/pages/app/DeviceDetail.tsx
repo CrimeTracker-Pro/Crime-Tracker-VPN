@@ -1017,7 +1017,7 @@ function DeviceTimeline({
           <p className="text-[11px] text-muted-foreground/80">
             The /devices/{`{id}`}/events endpoint isn't available on this API
             build — rebuild and restart the api binary (cargo run -p
-            zerovpn-api) to pick it up.
+            crimetracker-vpn-api) to pick it up.
           </p>
         )}
         {onRetry && (
@@ -1629,7 +1629,7 @@ PersistentKeepalive  = ${KEEPALIVE_SECS}`
 }
 
 function downloadConfig(name: string, config: string) {
-  const safe = name.replace(/[^a-z0-9_-]+/gi, "-").toLowerCase() || "zerovpn"
+  const safe = name.replace(/[^a-z0-9_-]+/gi, "-").toLowerCase() || "crimetracker-vpn"
   const blob = new Blob([config], { type: "text/plain" })
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")

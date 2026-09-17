@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="web/public/favicon.svg" width="56" height="56" alt="ZeroVPN logo" />
+<img src="web/public/favicon.svg" width="56" height="56" alt="Crime Tracker VPN logo" />
 
-# ZeroVPN
+# Crime Tracker VPN
 
 **Run your own VPN — without running a fleet.**
 
@@ -11,26 +11,25 @@ admin policy from one fast console, with live telemetry and a full audit trail �
 third-party SaaS anywhere in the data path.
 
 [![CI](https://github.com/CrimeTracker-Pro/Crime-Tracker-VPN/actions/workflows/ci.yml/badge.svg)](https://github.com/CrimeTracker-Pro/Crime-Tracker-VPN/actions/workflows/ci.yml)
-[![Images](https://github.com/CrimeTracker-Pro/Crime-Tracker-VPN/actions/workflows/images.yml/badge.svg)](https://github.com/CrimeTracker-Pro/Crime-Tracker-VPN/actions/workflows/images.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 ![Rust](https://img.shields.io/badge/Rust-1.95%20·%20edition%202024-b7410e.svg)
 ![React](https://img.shields.io/badge/React-19%20·%20Vite%207-149eca.svg)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18-336791.svg)
 ![WireGuard](https://img.shields.io/badge/WireGuard-userspace-88171a.svg)
 
-**[📖 Website & docs → bhadri01.github.io/ZeroVPN](https://bhadri01.github.io/ZeroVPN/)** · what it is, features, architecture, security, and FAQ.
+**[📖 Website & docs](docs/index.html)** · what it is, features, architecture, security, and FAQ.
 
 </div>
 
-> This README is the operator's guide — how to run, configure, and deploy ZeroVPN.
+> This README is the operator's guide — how to run, configure, and deploy Crime Tracker VPN.
 > For the "what & why" (features, architecture, security posture, FAQ) see the
-> **[project website](https://bhadri01.github.io/ZeroVPN/)**.
+> **[project website](docs/index.html)**.
 
 ---
 
 ## Contents
 
-- [Why ZeroVPN](#why-zerovpn)
+- [Why Crime Tracker VPN](#why-crimetracker-vpn)
 - [Features](#features)
 - [Architecture](#architecture)
 - [Requirements](#requirements)
@@ -49,15 +48,15 @@ third-party SaaS anywhere in the data path.
 
 ---
 
-## Why ZeroVPN
+## Why Crime Tracker VPN
 
-ZeroVPN is a control plane for a WireGuard network **you** host. It handles the
+Crime Tracker VPN is a control plane for a WireGuard network **you** host. It handles the
 device lifecycle (keypairs, IP allocation, revocation), gives users a live console over
 their own peers, and gives admins full visibility — users, quotas, sessions, and an audit
 trail — over the whole fleet. It scales from a single homelab box, to a small team of
 10–50 peers, to a compliance operator who has to answer "who did what, from where".
 
-**Honest scope:** ZeroVPN is a **private-network access VPN**. Each device split-tunnels
+**Honest scope:** Crime Tracker VPN is a **private-network access VPN**. Each device split-tunnels
 only the VPN's own subnet (`10.10.0.0/22` by default), connecting your people to your
 machines. It is deliberately **not** a full-tunnel or anonymity product.
 
@@ -133,7 +132,7 @@ WireGuard tunnel** (works on macOS too):
 
 ```bash
 git clone https://github.com/CrimeTracker-Pro/Crime-Tracker-VPN
-cd ZeroVPN
+cd Crime-Tracker-VPN
 
 make setup      # copy .env.example → .env and generate secrets (session, db, KEK)
 make up-dev     # build + start api/worker/web in Linux; the API auto-migrates on boot
@@ -172,39 +171,32 @@ with Google using that same address.
 
 ## Quickstart (production)
 
-App images are **built + pushed to a registry**, and the deploy host **pulls** them (never
-builds). Every build is tagged twice — `$ZEROVPN_IMAGE_TAG` (the deploy pointer, usually
-`latest`) **and** `sha-<git commit>` for rollback:
+App images are built locally on the deployment host. They are not pushed to
+GitHub or another registry.
 
 ```bash
-# Build + push images (CI does this on push to main/tags; or locally after `docker login`):
-make images && make push        # → zerovpn-*:$ZEROVPN_IMAGE_TAG  +  zerovpn-*:sha-<commit>
-
-# On the deploy host:
+# On the deployment host:
 make setup                      # copy .env.example → .env and generate secrets
 $EDITOR .env                    # production values (see below)
-make up-prod                    # pull the pre-built images and start (no dev profile)
+make up-prod                    # build local images and start
 make bootstrap-admin EMAIL=admin@your-domain
 ```
 
 Production differs from dev only in `.env`: `ZEROVPN_ENVIRONMENT=production`, a real
 `ZEROVPN_DOMAIN` / `ZEROVPN_PUBLIC_URL`, a real SMTP relay, `ZEROVPN_CERT_RESOLVER=le`
-(Traefik + Let's Encrypt) with `ZEROVPN_ACME_EMAIL`, and `ZEROVPN_REGISTRY` /
-`ZEROVPN_IMAGE_TAG`. The API refuses to boot in production with `CHANGEME` secrets or a
+(Traefik + Let's Encrypt) with `ZEROVPN_ACME_EMAIL`. The API refuses to boot in production with `CHANGEME` secrets or a
 placeholder domain, and runs its migrations itself on startup. See the
 [runbook](docs/runbook.md#dev-vs-prod-isolation) for the full dev/prod table.
 
-> **Redeploys need `git pull` on the host, not just new images.** The reverse-proxy
-> routing (`deploy/traefik-dynamic.yml`), the compose files, and the Makefile are read
-> from the host's checkout — images alone don't carry them. A routine update is:
+> **Redeploys need `git pull` on the host.** The reverse-proxy routing,
+> Compose files, and Makefile are read from the host's checkout. A routine update is:
 >
 > ```bash
 > git pull && make up-prod && make smoke
 > ```
 >
-> **Rollback:** set `ZEROVPN_IMAGE_TAG=sha-<last-good-commit>` in the host's `.env` and
-> re-run `make up-prod`. Migrations are additive, so older images run fine against a
-> newer schema.
+> **Rollback:** restore the last-good source revision and rebuild locally. Review
+> database migrations before rolling code backward.
 
 ## Configuration
 
@@ -232,8 +224,8 @@ Run `make help` for the live list. The essentials:
 | `make down-dev`           | Stop the dev containers                                            |
 | `make logs-dev`           | Tail dev-container logs                                            |
 | `make up`                 | Start the fully-dockerized dev stack behind Traefik               |
-| `make up-prod`            | Deploy prod from pre-built images (pull, never build)             |
-| `make images` / `push`    | Build / push the app images (`$ZEROVPN_IMAGE_TAG` + `sha-<commit>`) |
+| `make up-prod`            | Build local images and start the production-shaped stack          |
+| `make images`             | Build local Crime Tracker VPN images (`$ZEROVPN_IMAGE_TAG` + `sha-<commit>`) |
 | `make down`               | Stop the stack                                                     |
 | `make dev`                | Native loop: infra in Docker, app processes native                |
 | `make dev-api` / `-worker` / `-web` | Run each process natively against the dockerized infra  |
@@ -273,7 +265,7 @@ The API exposes `/health` (liveness), `/ready` (readiness), `/metrics` (Promethe
 
 ## Documentation
 
-- **[Website](https://bhadri01.github.io/ZeroVPN/)** — features, architecture, security, FAQ
+- **[Website](docs/index.html)** — features, architecture, security, FAQ
 - **[docs/architecture.md](docs/architecture.md)** — components, data flow, WireGuard transport
 - **[docs/API.md](docs/API.md)** — HTTP API overview (live spec at `/openapi.json`)
 - **[docs/app-connect-endpoint.md](docs/app-connect-endpoint.md)** — the device connect endpoint
@@ -288,13 +280,13 @@ push.
 
 ## Security
 
-Please report vulnerabilities privately — see **[SECURITY.md](SECURITY.md)**. ZeroVPN is
+Please report vulnerabilities privately — see **[SECURITY.md](SECURITY.md)**. Crime Tracker VPN is
 transparent about its limits: keys are stored server-side (not zero-knowledge), the KEK is a
 single operator-provided secret, and it is split-tunnel only. Invitations are
 rate-limited per email, TOTP is enforced on the Google
 sign-in path too, and sessions are individually revocable from the Security page. The full
 posture — including what it does and does not log — is on the
-[security section](https://bhadri01.github.io/ZeroVPN/#security) of the website.
+[security section](docs/index.html#security) of the website.
 
 ## Roadmap
 

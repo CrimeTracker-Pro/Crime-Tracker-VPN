@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% import "_components.html" as ui %}
 
-{% block subject %}New sign-in to your ZeroVPN account{% endblock %}
+{% block subject %}New sign-in to your Crime Tracker VPN account{% endblock %}
 {% block preheader %}A sign-in to your account was just observed from a new location.{% endblock %}
 {% block eyebrow %}Security · New sign-in{% endblock %}
 {% block title %}New sign-in detected{% endblock %}
 
 {% block content %}
-  {% call ui::lead("A successful sign-in to your ZeroVPN account was just observed from a network we haven't seen on this account before.") %}{% endcall %}
+  {% call ui::lead("A successful sign-in to your Crime Tracker VPN account was just observed from a network we haven't seen on this account before.") %}{% endcall %}
 
   {% call ui::kv_list() %}
     {{ ui::kv_row(k="Account", v=email) }}
@@ -18,9 +18,9 @@
 
   {% call ui::p("If this was you, no action needed — this email is just a heads-up.") %}{% endcall %}
 
-  {% call ui::alert(tone="warn", body="<strong>If this wasn't you</strong> — change your password immediately, then sign out of every other session.") %}{% endcall %}
+  {% call ui::alert(tone="warn", body="<strong>If this wasn't you</strong> — secure your Google account immediately, then sign out of every other VPN session.") %}{% endcall %}
 
   {% call ui::button(label="Review account security", href=security_link) %}{% endcall %}
 {% endblock %}
 
-{% block why %}You're receiving this email because a sign-in from a new IP prefix was detected on your ZeroVPN account.{% endblock %}
+{% block why %}You're receiving this email because a sign-in from a new IP prefix was detected on your Crime Tracker VPN account.{% endblock %}

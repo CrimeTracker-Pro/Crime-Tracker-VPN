@@ -1,4 +1,4 @@
-name: zerovpn
+name: crimetracker-vpn
 
 # Single compose file. Per-environment values come from `.env`; optional
 # service groups are gated by profiles:
@@ -71,8 +71,8 @@ services:
       - no-new-privileges:true
 
   frontend:
-    container_name: zerovpn-frontend
-    image: ${ZEROVPN_REGISTRY:-ghcr.io/crimetracker-pro}/zerovpn-frontend:${ZEROVPN_IMAGE_TAG:-latest}
+    container_name: crimetracker-vpn-frontend
+    image: ${ZEROVPN_REGISTRY:-local}/crimetracker-vpn-frontend:${ZEROVPN_IMAGE_TAG:-latest}
     <<: [*default-restart, *default-logging]
     networks:
       - web
@@ -102,8 +102,8 @@ services:
   # `modprobe`, no /lib/modules, no SYS_MODULE). Still validate the tunnel on
   # your host once (`docker compose logs api` → "wg interface up"; `wg show wg0`).
   api:
-    container_name: zerovpn-api
-    image: ${ZEROVPN_REGISTRY:-ghcr.io/crimetracker-pro}/zerovpn-api:${ZEROVPN_IMAGE_TAG:-latest}
+    container_name: crimetracker-vpn-api
+    image: ${ZEROVPN_REGISTRY:-local}/crimetracker-vpn-api:${ZEROVPN_IMAGE_TAG:-latest}
     <<: [*default-restart, *default-logging]
     env_file: .env
     environment:
@@ -125,8 +125,8 @@ services:
       # Loopback ZMQ, published on behalf of the `worker` (it shares this netns).
       - "127.0.0.1:5555:5555"
     networks:
-      - web
-      - backend
+      web:
+      backend:
     depends_on:
       # NOT the worker anymore — the worker shares this container's netns, so it
       # must start *after* the api (see worker.depends_on). The api's ZMQ
@@ -156,7 +156,8 @@ services:
   # subscribes to it on 127.0.0.1:5555. Mirrors the dev topology; requires the
   # api to start first (depends_on below).
   worker:
-    image: ${ZEROVPN_REGISTRY:-ghcr.io/crimetracker-pro}/zerovpn-worker:${ZEROVPN_IMAGE_TAG:-latest}
+    container_name: crimetracker-vpn-worker
+    image: ${ZEROVPN_REGISTRY:-local}/crimetracker-vpn-worker:${ZEROVPN_IMAGE_TAG:-latest}
     <<: [*default-restart, *default-logging]
     env_file: .env
     environment:
@@ -167,7 +168,7 @@ services:
       # (CPU/MEM/Net I/O) — the api container owns wg0. Deterministic
       # because the API has an explicit container_name. Without
       # this the worker falls back to sysinfo and Net I/O reads 0.
-      ZEROVPN_WORKER__VPN_HOST_CONTAINER: zerovpn-api
+      ZEROVPN_WORKER__VPN_HOST_CONTAINER: crimetracker-vpn-api
     network_mode: "service:api"
     depends_on:
       db:
@@ -191,6 +192,8 @@ services:
   db:
     image: postgres:18-alpine
     <<: [*default-restart, *default-logging]
+    # Existing PostgreSQL role/database names are stable data identifiers,
+    # not the displayed Compose project or container names.
     environment:
       POSTGRES_DB: zerovpn
       POSTGRES_USER: zerovpn
@@ -232,6 +235,10 @@ services:
 volumes:
   traefik_letsencrypt:
   pg_data:
+    # Reuse the existing database during the Compose project-name cutover.
+    # External prevents Compose from treating another project's data as disposable.
+    name: zerovpn_pg_data
+    external: true
   # Ephemeral: boringtun's WireGuard UAPI socket, shared api <-> worker.
   wg_run:
 

@@ -15,7 +15,7 @@ use super::{admin, auth, bandwidth, connections, devices, dto, health, invitatio
 #[derive(OpenApi)]
 #[openapi(
     info(
-        title = "ZeroVPN API",
+        title = "Crime Tracker VPN API",
         version = env!("CARGO_PKG_VERSION"),
         description = "Self-hosted WireGuard VPN management API.",
     ),

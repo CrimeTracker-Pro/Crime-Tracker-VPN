@@ -1,17 +1,15 @@
-# Build overlay — adds `build:` back to the app services so their images can be
-# built (and pushed) locally / in CI. The base docker-compose.yml references
-# pre-built images (`image:`) only, so a *deploy* host pulls and never builds.
+# Build overlay — adds `build:` to the app services so their images can be
+# built locally. The base docker-compose.yml supplies local image names.
 #
 #   Build + tag:  docker compose -f docker-compose.yml -f docker-compose.build.yml build   (make images)
-#   Push:         docker compose -f docker-compose.yml -f docker-compose.build.yml push     (make push)
 #   Local run:    docker compose -f docker-compose.yml -f docker-compose.build.yml --profile dev up -d --build   (make up)
 #
-# Each service keeps the `image:` from the base file, so `build` tags it with
-# the ${ZEROVPN_REGISTRY}/...:${ZEROVPN_IMAGE_TAG} name ready to push.
+# Each service keeps the `image:` from the base file, so `build` gives it a
+# local ${ZEROVPN_REGISTRY}/...:${ZEROVPN_IMAGE_TAG} tag.
 #
 # Deploy hosts are x86_64, so builds target linux/amd64 regardless of the
 # build machine (on an Apple Silicon Mac this cross-builds via Rosetta —
-# slower, but the pushed image actually runs on the server). Set
+# slower, but the built image runs on the server). Set
 # ZEROVPN_BUILD_PLATFORM=linux/arm64 for a fast native image for `make up`.
 services:
   api:

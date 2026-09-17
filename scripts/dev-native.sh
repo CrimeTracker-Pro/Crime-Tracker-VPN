@@ -20,7 +20,7 @@ if [[ ! -f .env ]]; then
 fi
 
 # Parse .env as KEY=VALUE without shell expansion. We can't `source` it
-# because values like `ZeroVPN <noreply@localhost>` contain `<`, which bash
+# because values like `Crime Tracker VPN <noreply@localhost>` contain `<`, which bash
 # would interpret as a redirect. Docker compose parses .env this way already.
 while IFS= read -r line || [[ -n "$line" ]]; do
     [[ -z "${line// }" ]] && continue

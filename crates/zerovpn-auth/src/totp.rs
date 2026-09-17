@@ -99,7 +99,7 @@ mod tests {
     #[test]
     fn enroll_and_verify_roundtrip() {
         let secret = generate_secret_b32();
-        let totp = build_totp(&secret, "alice@example.com", "ZeroVPN").unwrap();
+        let totp = build_totp(&secret, "alice@example.com", "Crime Tracker VPN").unwrap();
         let now_code = totp.generate_current().unwrap();
         assert!(verify(&secret, &now_code).unwrap());
         assert!(!verify(&secret, "000000").unwrap());
@@ -108,8 +108,11 @@ mod tests {
     #[test]
     fn provisioning_uri_contains_issuer_and_account() {
         let secret = generate_secret_b32();
-        let uri = provisioning_uri(&secret, "alice@example.com", "ZeroVPN").unwrap();
-        assert!(uri.contains("issuer=ZeroVPN"));
+        let uri = provisioning_uri(&secret, "alice@example.com", "Crime Tracker VPN").unwrap();
+        assert!(
+            uri.contains("issuer=Crime%20Tracker%20VPN")
+                || uri.contains("issuer=Crime+Tracker+VPN")
+        );
         // The library URL-encodes the account email's @
         assert!(uri.contains("alice%40example.com") || uri.contains("alice@example.com"));
     }

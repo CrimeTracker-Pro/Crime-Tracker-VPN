@@ -151,7 +151,7 @@ async fn main() -> Result<()> {
             let user = env::var("ZEROVPN_SMTP__USERNAME").ok().filter(|s| !s.is_empty());
             let pass = env::var("ZEROVPN_SMTP__PASSWORD").ok().filter(|s| !s.is_empty());
             let from_str = env::var("ZEROVPN_SMTP__FROM")
-                .unwrap_or_else(|_| "ZeroVPN <noreply@localhost>".into());
+                .unwrap_or_else(|_| "Crime Tracker VPN <noreply@localhost>".into());
             let from: zerovpn_mail::Mailbox = from_str
                 .parse()
                 .map_err(|e| anyhow::anyhow!("invalid SMTP_FROM: {e}"))?;

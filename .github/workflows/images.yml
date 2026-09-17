@@ -1,60 +1,20 @@
-name: images
+name: images (build only)
 
-# Build the app images (api / worker / frontend) and push them
-# to GHCR. Deploy hosts then pull these by tag (docker-compose.yml is
-# image-only) instead of building at deploy time.
-#
-#   - push to main   -> pushes :latest (+ :<sha>)
-#   - push a tag v*  -> pushes :<tag>  (+ :<sha>)
+# Validate local Docker builds. Never log in to or push to a registry.
 
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   workflow_dispatch:
 
 jobs:
-  build-push:
-    name: build + push images
+  build:
+    name: build images without publishing
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v5
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Resolve registry + tag
-        run: |
-          # GHCR namespace must be lowercase.
-          owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
-          echo "ZEROVPN_REGISTRY=ghcr.io/${owner}" >> "$GITHUB_ENV"
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            echo "ZEROVPN_IMAGE_TAG=${{ github.ref_name }}" >> "$GITHUB_ENV"
-          else
-            echo "ZEROVPN_IMAGE_TAG=latest" >> "$GITHUB_ENV"
-          fi
-
-      # Compose validates env_file entries even for `push`. CI images do not
-      # need runtime secrets; an empty file satisfies that config reference.
-      - name: Prepare empty runtime env file
-        run: touch .env
-
-      - name: Build + push (moving tag)
-        run: |
-          docker compose -f docker-compose.yml -f docker-compose.build.yml build
-          docker compose -f docker-compose.yml -f docker-compose.build.yml push
-
-      # Also publish an immutable :<sha> tag for reproducible deploys.
-      - name: Build + push (:sha)
-        env:
-          ZEROVPN_IMAGE_TAG: ${{ github.sha }}
-        run: |
-          docker compose -f docker-compose.yml -f docker-compose.build.yml build
-          docker compose -f docker-compose.yml -f docker-compose.build.yml push
+      - name: Build local images
+        run: docker compose -f docker-compose.yml -f docker-compose.build.yml build api worker frontend
