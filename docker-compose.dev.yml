@@ -12,7 +12,7 @@
 #
 # The prod api/worker/frontend/traefik are pushed to the `prod` profile here so
 # they don't start in dev; the *-dev services below replace them. Infra
-# (db/dnsmasq/mailhog) still comes from docker-compose.yml.
+# (db/mailhog) still comes from docker-compose.yml.
 
 services:
   # ── Disable the prod-shaped services in dev ────────────────────────────────
@@ -58,11 +58,6 @@ services:
       # Shared with worker-dev so the worker can read the userspace WireGuard
       # UAPI socket (boringtun fallback). Harmless with the kernel backend.
       - wg_run:/run/wireguard
-      # Shared with the dnsmasq (CoreDNS) container: the API writes the
-      # per-peer hosts file here (ZEROVPN_WG__DNSMASQ_HOSTS_FILE) and CoreDNS
-      # serves it. Without this the file lands only in api-dev and *.vpn.local
-      # never resolves.
-      - dnsmasq_conf:/etc/dnsmasq.d
       - ./deploy/dev-entrypoint-api.sh:/usr/local/bin/dev-entrypoint-api.sh:ro
     ports:
       - "127.0.0.1:18080:8080"   # api, for host debugging

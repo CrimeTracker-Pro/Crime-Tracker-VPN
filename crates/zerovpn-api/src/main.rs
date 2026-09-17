@@ -131,14 +131,6 @@ async fn main() -> Result<()> {
         .await
         .context("build ip allocators")?;
 
-    // Regenerate the CoreDNS hosts file from current device DNS names.
-    // Best-effort: the resolver volume can be empty after a fresh deploy or
-    // a restart with no intervening DNS-name change, which would leave
-    // `*.vpn.local` unresolvable until the next edit. Don't fail boot if the
-    // resolver volume isn't mounted (dev without the dnsmasq container).
-    if let Err(e) = routes::dns::sync_dnsmasq(&pool).await {
-        warn!(?e, "startup DNS hosts-file sync failed (non-fatal)");
-    }
 
     let public_url =
         env::var("ZEROVPN_PUBLIC_URL").unwrap_or_else(|_| "http://localhost".into());
@@ -299,12 +291,6 @@ async fn main() -> Result<()> {
                     "/devices/order",
                     axum::routing::put(routes::devices::reorder),
                 )
-                // Same reason — `dns-check` is a static path, must sit
-                // before the `/devices/{id}` catch-all.
-                .route(
-                    "/devices/dns-check",
-                    get(routes::dns::check_availability),
-                )
                 // App one-tap connect/provision. Static path, must precede
                 // the `/devices/{id}` catch-all so "connect" isn't parsed as
                 // a device UUID.
@@ -328,7 +314,6 @@ async fn main() -> Result<()> {
                     "/devices/{id}/conf",
                     get(routes::devices::redownload_conf),
                 )
-                .route("/devices/{id}/dns", axum::routing::put(routes::dns::set))
                 .route(
                     "/devices/{id}/quota",
                     axum::routing::put(routes::devices::set_my_quota),

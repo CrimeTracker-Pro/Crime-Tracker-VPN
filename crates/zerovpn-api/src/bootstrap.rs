@@ -73,16 +73,6 @@ pub async fn reconcile_peers(pool: &PgPool, wg: &Arc<dyn WgController>) -> anyho
     Ok(())
 }
 
-/// Resolver IP the wg0 DNS DNAT forwards peer queries to — the CoreDNS
-/// (`dnsmasq`) container's stable address. `None`/empty disables the DNAT.
-/// See `ZEROVPN_WG__DNS_FORWARD_IP`.
-pub(crate) fn dns_forward_ip() -> Option<String> {
-    std::env::var("ZEROVPN_WG__DNS_FORWARD_IP")
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-}
-
 /// Run a command to completion, capturing output; returns whether it exited 0.
 /// Used for best-effort WG interface bring-up / iptables — failures are logged
 /// by the caller, never fatal.
@@ -173,7 +163,7 @@ async fn write_server_conf(private_key: &str, listen_port: i32, cidr: IpNetwork)
 }
 
 /// Tear down and (re)bring-up `iface` from `conf_str`, then apply best-effort
-/// forwarding / NAT / DNS-DNAT. The clean-slate down/del makes it safe to call
+/// forwarding / NAT. The clean-slate down/del makes it safe to call
 /// on an interface that's already up (e.g. after a server key rotation).
 async fn bring_up_wg(iface: &str, conf_str: &str) {
     let _ = run("wg-quick", &["down", conf_str]).await;
@@ -195,31 +185,6 @@ async fn bring_up_wg(iface: &str, conf_str: &str) {
     )
     .await;
 
-    // DNS DNAT: redirect peer DNS (sent to the tunnel gateway 10.10.0.1:53) to
-    // CoreDNS so `*.vpn.local` resolves. Off unless ZEROVPN_WG__DNS_FORWARD_IP
-    // is set (see .env.example — a wrong value black-holes all DNS).
-    if let Some(fwd) = dns_forward_ip() {
-        let dst = format!("{fwd}:53");
-        for proto in ["udp", "tcp"] {
-            let _ = run(
-                "iptables",
-                &[
-                    "-t", "nat", "-A", "PREROUTING", "-i", iface, "-d", "10.10.0.1", "-p", proto,
-                    "--dport", "53", "-j", "DNAT", "--to-destination", &dst,
-                ],
-            )
-            .await;
-            let _ = run(
-                "iptables",
-                &[
-                    "-t", "nat", "-A", "POSTROUTING", "-d", &fwd, "-p", proto, "--dport", "53",
-                    "-j", "MASQUERADE",
-                ],
-            )
-            .await;
-        }
-        info!(forward_ip = %fwd, "peer DNS DNAT -> CoreDNS applied");
-    }
 }
 
 /// Bring the WG interface up from `wg0.conf`. This is what makes the api the WG

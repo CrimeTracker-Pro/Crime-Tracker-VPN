@@ -827,8 +827,7 @@ pub async fn delete(
 
 /// Shared revoke core, used by the owner's DELETE and the admin revoke:
 /// flips the row to `revoked`, releases the allocated IP, removes the WG
-/// peer, and drops the device's DNS names from the resolver (the hosts
-/// file only lists active devices, and the freed IP may be reallocated).
+/// peer and releases its allocated IP.
 /// Callers own audit + notify — actor and action name differ per path.
 pub(crate) async fn teardown_device(state: &AppState, device: &Device) -> ApiResult<()> {
     let n =
@@ -841,11 +840,6 @@ pub(crate) async fn teardown_device(state: &AppState, device: &Device) -> ApiRes
     }
     if let Err(e) = state.wg.remove_peer(&device.public_key).await {
         tracing::warn!(?e, "wg remove_peer failed (non-fatal)");
-    }
-    if !device.dns_names.is_empty()
-        && let Err(e) = crate::routes::dns::sync_dnsmasq(&state.pool).await
-    {
-        tracing::warn!(?e, "dnsmasq sync failed");
     }
     metrics::counter!("zerovpn_devices_revoked").increment(1);
     Ok(())
@@ -1657,14 +1651,6 @@ pub(crate) async fn apply_pause_state(
         _ => {}
     }
 
-    // The resolver only lists *active* devices, so pause/unpause must
-    // regenerate the hosts file just like a DNS-name edit does.
-    if !device.dns_names.is_empty()
-        && let Err(e) = crate::routes::dns::sync_dnsmasq(&state.pool).await
-    {
-        tracing::warn!(?e, "dnsmasq sync failed");
-    }
-
     Ok(())
 }
 
@@ -1708,4 +1694,3 @@ fn reserve_specific(
         ))),
     }
 }
-

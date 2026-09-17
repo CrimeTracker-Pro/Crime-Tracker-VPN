@@ -134,10 +134,6 @@ services:
       db:
         condition: service_healthy
     volumes:
-      # Shared with the `dnsmasq` (CoreDNS) service: the API writes the per-peer
-      # hosts file here (routes/dns.rs::sync_dnsmasq) and CoreDNS serves it.
-      # Derived from the DB, regenerated on boot — not durable state.
-      - dnsmasq_conf:/etc/dnsmasq.d
       # boringtun's WireGuard UAPI socket, shared with the `worker` so its poller
       # can `wg show wg0`. Ephemeral runtime dir, not durable state.
       - wg_run:/run/wireguard
@@ -230,33 +226,12 @@ services:
       - random_page_cost=1.1
     mem_limit: 320m
 
-  dnsmasq:
-    image: coredns/coredns:latest
-    platform: linux/amd64
-    <<: [*default-restart, *default-logging]
-    cap_add:
-      - NET_BIND_SERVICE
-    volumes:
-      - dnsmasq_conf:/etc/dnsmasq.d
-      - ./deploy/Corefile:/etc/coredns/Corefile:ro
-    networks:
-      backend:
-        # Stable address the wg0 DNS DNAT forwards peer queries to. Keep in
-        # sync with ZEROVPN_WG__DNS_FORWARD_IP (.env) — the API bakes that
-        # value into wg0.conf's PostUp rules.
-        ipv4_address: 172.30.0.53
-    mem_limit: 32m
-    command:
-      - -conf
-      - /etc/coredns/Corefile
-
   # (The separate `wg` container was removed: the api is the WG host now — it
   # brings up wg0 itself and programs peers. See the `api` service above.)
 
 volumes:
   traefik_letsencrypt:
   pg_data:
-  dnsmasq_conf:
   # Ephemeral: boringtun's WireGuard UAPI socket, shared api <-> worker.
   wg_run:
 
@@ -268,9 +243,3 @@ networks:
     internal: false
     driver_opts:
       com.docker.network.bridge.enable_icc: "true"
-    # Fixed subnet so the resolver (CoreDNS / `dnsmasq` service) can take a
-    # stable IP that the wg0 DNS DNAT targets — see ZEROVPN_WG__DNS_FORWARD_IP
-    # and the PostUp rules generated in bootstrap.rs / admin rotate-keys.
-    ipam:
-      config:
-        - subnet: 172.30.0.0/24

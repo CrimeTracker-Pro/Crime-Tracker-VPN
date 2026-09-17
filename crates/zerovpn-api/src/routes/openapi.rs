@@ -76,8 +76,6 @@ use super::{
         devices::set_my_quota,
         devices::pause,
         devices::unpause,
-        dns::set,
-        dns::check_availability,
 
         // Bandwidth
         bandwidth::for_device,

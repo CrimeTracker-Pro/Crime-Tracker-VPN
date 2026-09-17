@@ -7,7 +7,6 @@ members = [
     "crates/zerovpn-auth",
     "crates/zerovpn-events",
     "crates/zerovpn-wire",
-    "crates/zerovpn-dns",
     "crates/zerovpn-mail",
     "crates/zerovpn-api",
     "crates/zerovpn-worker",
@@ -32,7 +31,6 @@ zerovpn-wg = { path = "crates/zerovpn-wg" }
 zerovpn-auth = { path = "crates/zerovpn-auth" }
 zerovpn-events = { path = "crates/zerovpn-events" }
 zerovpn-wire = { path = "crates/zerovpn-wire" }
-zerovpn-dns = { path = "crates/zerovpn-dns" }
 zerovpn-mail = { path = "crates/zerovpn-mail" }
 
 # Web framework
