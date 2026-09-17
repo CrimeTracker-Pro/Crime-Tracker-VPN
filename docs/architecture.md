@@ -11,10 +11,10 @@ This file is the reference that lives with the code.
         │ TCP 80/443           │ UDP 51820           │
         ▼                      ▼                     │
    ┌─────────┐           ┌─────────┐    ┌─────────┐  │
-   │ traefik │           │   wg    │───▶│ CoreDNS │  │
-   │ (proxy) │           │(host-net│    │ (peer   │  │
-   └────┬────┘           │ NET_ADM)│    │  DNS)   │  │
-        │                └────┬────┘    └─────────┘  │
+   │ traefik │           │   wg    │                 │
+   │ (proxy) │           │(host-net│                 │
+   └────┬────┘           │ NET_ADM)│                 │
+        │                └────┬────┘                 │
         │ /api/* /ws/*        │                      │
         ▼                     │ wg show              │
    ┌─────────┐                │                      │
@@ -38,13 +38,12 @@ This file is the reference that lives with the code.
 > `wg` is not a separate box — the **api** is the WireGuard host (see
 > *WireGuard runtime* below). Sessions and background jobs are backed by
 > Postgres; there is no `redis` and no external job queue — periodic work runs
-> on plain `tokio` intervals. The peer resolver is CoreDNS (the compose service
-> is still named `dnsmasq` for legacy reasons and reads a dnsmasq-format hosts
-> file the api writes). The reverse proxy is Traefik.
+> on plain `tokio` intervals. The reverse proxy is Traefik. This stack does not
+> run a DNS resolver or configure DNS in generated peer profiles.
 
 ## Process model
 
-- **api** (binary `zerovpn-api`): HTTP + WebSocket, Axum 0.8. Reads/writes the DB, subscribes to ZMQ for live data, fans out to connected WS clients, brings up the WireGuard interface in its own container/netns (userspace boringtun via `wg-quick`, not linked into the binary), sends transactional email (verify/reset) via `zerovpn-mail`, and serves the OpenAPI spec.
+- **api** (binary `zerovpn-api`): HTTP + WebSocket, Axum 0.8. Reads/writes the DB, subscribes to ZMQ for live data, fans out to connected WS clients, brings up the WireGuard interface in its own container/netns (userspace boringtun via `wg-quick`, not linked into the binary), sends invitation email via `zerovpn-mail`, and serves the OpenAPI spec.
 - **worker** (binary `zerovpn-worker`): runs the WG poller (~1 s by default, env-tunable), bandwidth aggregator (a plain `tokio::time::interval`, not a cron/queue), per-server health sampler, and retention purger, and binds the ZMQ PUB socket on `tcp://0.0.0.0:5555`. It does not send email.
 - **cli** (binary `zerovpn-cli`): admin tool — migrate DB, bootstrap admin, rotate keys.
 
@@ -79,7 +78,7 @@ full logging system" for the decision record. Concretely:
 The **api is the WireGuard host itself** — there is no separate `wg` container.
 On boot the api:
 1. materializes `wg0.conf` from the DB-stored server key (`servers.private_key_encrypted`, KEK-encrypted) onto ephemeral tmpfs — nothing WG-related persists on disk;
-2. brings `wg0` up in its own container netns (`wg-quick` + **userspace boringtun**, in both dev and prod — no host kernel module) and applies forwarding/NAT/DNS-DNAT best-effort;
+2. brings `wg0` up in its own container netns (`wg-quick` + **userspace boringtun**, in both dev and prod — no host kernel module) and applies forwarding/NAT best-effort;
 3. re-adds every active peer (`reconcile_peers`) and thereafter programs peers on device create/revoke.
 
 The **worker shares the api's netns** (`network_mode: service:api`) so its poller can `wg show wg0` for stats. Consequences:

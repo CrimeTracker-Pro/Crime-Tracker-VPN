@@ -10,7 +10,7 @@
 use axum::{Json, response::IntoResponse};
 use utoipa::{Modify, OpenApi, openapi::security::{SecurityScheme, ApiKey, ApiKeyValue}};
 
-use super::{admin, auth, bandwidth, connections, devices, dto, email_auth, health, me, oauth, totp, ws};
+use super::{admin, auth, bandwidth, connections, devices, dto, health, invitations, me, oauth, totp, ws};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -34,11 +34,15 @@ use super::{admin, auth, bandwidth, connections, devices, dto, email_auth, healt
         totp::enable,
         totp::disable,
         totp::regenerate_recovery_codes,
-        email_auth::verify_email,
+        invitations::verify,
+        invitations::list,
+        invitations::resend,
+        invitations::revoke,
         me::list_sessions,
         me::revoke_session,
         oauth::google_start,
         oauth::google_callback,
+        oauth::google_verify_totp,
 
         // Account
         me::export,
@@ -109,7 +113,6 @@ use super::{admin, auth, bandwidth, connections, devices, dto, email_auth, healt
         admin::user_detail,
         admin::delete_user,
         admin::set_user_role,
-        admin::admin_send_reset,
         admin::admin_disable_2fa,
         admin::admin_revoke_sessions,
         admin::admin_set_email_route,
@@ -149,9 +152,9 @@ use super::{admin, auth, bandwidth, connections, devices, dto, email_auth, healt
     )),
     tags(
         (name = "Health", description = "Liveness + readiness probes"),
-        (name = "Auth", description = "Login, registration, email verification, password reset, 2FA"),
+        (name = "Auth", description = "Invitation verification, Google sign-in and 2FA"),
         (name = "Account", description = "Authenticated user's own profile, preferences, topology, account deletion"),
-        (name = "Devices", description = "WireGuard peers + per-device DNS"),
+        (name = "Devices", description = "WireGuard peers"),
         (name = "Bandwidth", description = "Bucketed rx/tx history (per device + aggregate)"),
         (name = "Admin", description = "Admin-only operations on users, servers, audit log, maintenance mode"),
         (name = "Realtime", description = "WebSocket event streaming"),
@@ -211,26 +214,26 @@ mod tests {
     fn spec_lists_every_known_path() {
         let spec = ApiDoc::openapi();
         let paths: Vec<String> = spec.paths.paths.keys().cloned().collect();
-        // Floor matches the count we shipped with the derive migration
-        // (45 paths covering health/auth/account/devices/bandwidth/
+        // Floor covers health/auth/account/devices/bandwidth/
         // admin/realtime). Anything below means we lost coverage; a
         // bump just means add the new entries below and update this.
         assert!(
-            paths.len() >= 45,
-            "openapi spec has only {} paths; expected ≥45. paths: {paths:?}",
+            paths.len() >= 40,
+            "openapi spec has only {} paths; expected ≥40. paths: {paths:?}",
             paths.len()
         );
         for needed in [
             "/health",
             "/ping",
-            "/auth/login",
+            "/auth/google/callback",
+            "/auth/invitations/verify",
+            "/admin/invitations",
             "/auth/totp/setup",
             "/me",
             "/me/preferences",
             "/devices",
             "/devices/{id}",
             "/devices/order",
-            "/devices/dns-check",
             "/devices/{id}/conf",
             "/devices/{id}/bandwidth",
             "/bandwidth",

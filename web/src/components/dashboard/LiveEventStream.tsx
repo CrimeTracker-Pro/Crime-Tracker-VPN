@@ -23,7 +23,7 @@ const TONE_DOT: Record<string, string> = {
  * Terminal-style event tail. Reads from the shared event-tail store
  * populated by the main WebSocket connection. Every line is a real
  * backend-emitted event (stats_delta / handshake_change / peer_status_changed
- * / dns_updated / server_health for admins).
+ * / server_health for admins).
  */
 export function LiveEventStream() {
   const lines = useEventTail((s) => s.lines)

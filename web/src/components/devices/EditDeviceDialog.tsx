@@ -125,14 +125,10 @@ function EditDeviceForm({
       if (!next || next.length > 64) {
         throw new ApiError(422, "validation", "Name must be 1–64 characters")
       }
-      // DNS resolvers are server-managed (not user-editable). The PATCH
-      // overwrites dns_override with what it receives, so pass the device's
-      // current value through to leave it untouched.
       await patchDevice(device.id, {
         name: next !== device.name ? next : undefined,
         os: os !== device.os ? os : undefined,
         device_type: deviceType !== device.device_type ? deviceType : undefined,
-        dns_override: device.dns_override,
       })
       // Cap rides on a separate endpoint so it doesn't need its own
       // COALESCE branch in PATCH /devices/{id}. Only fire when the value

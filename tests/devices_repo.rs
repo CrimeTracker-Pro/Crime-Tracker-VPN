@@ -54,7 +54,6 @@ async fn seed_server(pool: &sqlx::PgPool) -> anyhow::Result<Uuid> {
             public_key: "srv-public-key",
             private_key_encrypted: b"test-encrypted-key",
             cidr,
-            dns_servers: vec![],
             mtu: 1420,
         },
     )

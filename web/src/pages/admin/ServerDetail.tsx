@@ -107,12 +107,6 @@ export function ServerDetailPage() {
                       </code>,
                     ],
                     ["MTU", String(s.mtu)],
-                    [
-                      "DNS",
-                      <code key="dns" className="font-mono text-xs">
-                        {s.dns_servers.join(", ") || "—"}
-                      </code>,
-                    ],
                   ]}
                 />
                 <div className="mt-4 flex flex-col gap-1.5">

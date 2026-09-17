@@ -65,7 +65,6 @@ function ServerEditor({ server }: { server: AdminServerRow }) {
   const [endpointHost, setEndpointHost] = useState(server.endpoint_host)
   const [endpointPort, setEndpointPort] = useState(String(server.endpoint_port))
   const [mtu, setMtu] = useState(String(server.mtu))
-  const [dnsServers, setDnsServers] = useState(server.dns_servers.join(", "))
   const [keepalive, setKeepalive] = useState(String(server.persistent_keepalive))
   const [rotateOpen, setRotateOpen] = useState(false)
 
@@ -77,10 +76,6 @@ function ServerEditor({ server }: { server: AdminServerRow }) {
         endpoint_host: endpointHost.trim() || undefined,
         endpoint_port: Number(endpointPort) || undefined,
         mtu: Number(mtu) || undefined,
-        dns_servers: dnsServers
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
         persistent_keepalive: Number.isFinite(ka) ? ka : undefined,
       })
     },
@@ -194,18 +189,6 @@ function ServerEditor({ server }: { server: AdminServerRow }) {
             className="font-mono"
           />
         </div>
-      </div>
-      <div className="mt-3 flex flex-col gap-1.5">
-        <Label htmlFor={`dns-${server.id}`} className="zv-eyebrow">
-          DNS servers (comma-separated IPs)
-        </Label>
-        <Input
-          id={`dns-${server.id}`}
-          value={dnsServers}
-          onChange={(e) => setDnsServers(e.target.value)}
-          placeholder="10.10.0.1, 1.1.1.1"
-          className="font-mono"
-        />
       </div>
       <ConfirmDialog
         open={rotateOpen}

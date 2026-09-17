@@ -5735,7 +5735,6 @@ dependencies = [
  "zerovpn-auth",
  "zerovpn-core",
  "zerovpn-db",
- "zerovpn-dns",
  "zerovpn-events",
  "zerovpn-mail",
  "zerovpn-wg",
@@ -5811,20 +5810,6 @@ dependencies = [
  "tracing",
  "utoipa",
  "uuid",
- "zerovpn-core",
-]
-
-[[package]]
-name = "zerovpn-dns"
-version = "0.1.0"
-dependencies = [
- "ipnetwork",
- "once_cell",
- "regex",
- "serde",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
  "zerovpn-core",
 ]
 

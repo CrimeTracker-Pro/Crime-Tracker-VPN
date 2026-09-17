@@ -32,7 +32,7 @@ import { useAuth } from "@/stores/auth"
  * Google's redirect lands here with `code` + `state`. We exchange them for a
  * session. If the account has 2FA enabled the backend returns `totp_required`
  * and leaves a pending-TOTP session (NOT a real one) — so we show the same
- * 6-digit prompt as password login and complete via `/auth/google/verify-totp`.
+ * 6-digit prompt and complete via `/auth/google/verify-totp`.
  * The Google identity alone never bypasses 2FA.
  *
  * The OAuth `state` is single-use server-side, so the exchange must run once.
@@ -65,13 +65,9 @@ export function GoogleCallbackPage() {
 
   // Drop the user into the app once we hold a *real* session.
   const finishSignIn = useCallback(
-    async (user: PublicUser, mustChange = false) => {
+    async (user: PublicUser) => {
       setUser(user)
       toast.success(`Welcome, ${user.email}`)
-      if (mustChange) {
-        navigate("/app/change-password", { replace: true })
-        return
-      }
       const prefs = await getMyPreferences().catch(() => null)
       navigate(prefs ? landingPath(prefs.default_landing) : "/app", {
         replace: true,
@@ -126,7 +122,7 @@ export function GoogleCallbackPage() {
           setNeedsTotp(true)
           return
         }
-        await finishSignIn(res.user, res.must_change_password)
+        await finishSignIn(res.user)
       } catch (e) {
         inflight.delete(state)
         fail(
@@ -149,7 +145,7 @@ export function GoogleCallbackPage() {
       const res = await googleVerifyTotp(code)
       const state = params.get("state")
       if (state) sessionStorage.removeItem(TOTP_KEY_PREFIX + state)
-      await finishSignIn(res.user, res.must_change_password)
+      await finishSignIn(res.user)
     } catch (e) {
       setAsyncError(
         e instanceof ApiError ? e.message : "Couldn't verify the code"

@@ -29,7 +29,6 @@ use crate::{
     routes::{
         devices::{PERSISTENT_KEEPALIVE, PublicDevice},
         dto::StatusAck,
-        email_auth,
     },
     state::AppState,
 };
@@ -331,7 +330,6 @@ pub struct AdminUserDevice {
     pub os: zerovpn_core::models::DeviceOs,
     pub status: zerovpn_core::models::DeviceStatus,
     pub allocated_ip: String,
-    pub dns_names: Vec<String>,
     #[serde(with = "time::serde::rfc3339::option")]
     pub last_handshake_at: Option<OffsetDateTime>,
     /// Most recent `host:port` the peer connected from, as observed by
@@ -427,7 +425,6 @@ pub async fn user_detail(
         os: zerovpn_core::models::DeviceOs,
         status: zerovpn_core::models::DeviceStatus,
         allocated_ip: ipnetwork::IpNetwork,
-        dns_names: Vec<String>,
         last_handshake_at: Option<OffsetDateTime>,
         last_peer_endpoint: Option<String>,
         last_peer_endpoint_at: Option<OffsetDateTime>,
@@ -437,7 +434,7 @@ pub async fn user_detail(
         auto_paused: bool,
     }
     let device_rows: Vec<DeviceRow> = sqlx::query_as(
-        r#"SELECT id, name, os, status, allocated_ip, dns_names,
+        r#"SELECT id, name, os, status, allocated_ip,
                   last_handshake_at, last_peer_endpoint, last_peer_endpoint_at,
                   created_at, monthly_byte_cap, current_month_bytes, auto_paused
              FROM devices
@@ -455,7 +452,6 @@ pub async fn user_detail(
             os: d.os,
             status: d.status,
             allocated_ip: d.allocated_ip.ip().to_string(),
-            dns_names: d.dns_names,
             last_handshake_at: d.last_handshake_at,
             last_peer_endpoint: d.last_peer_endpoint,
             last_peer_endpoint_at: d.last_peer_endpoint_at,
@@ -565,6 +561,11 @@ pub async fn set_user_status(
         .await?
         .ok_or(ApiError::NotFound)?
         .status;
+    if prior == UserStatus::PendingVerification || body.status == UserStatus::PendingVerification {
+        return Err(ApiError::Validation(
+            "pending invitations can only be activated by email verification and Google sign-in".into(),
+        ));
+    }
     let n = users::admin_set_status(&state.pool, target_id, body.status).await?;
     if n == 0 {
         return Err(ApiError::NotFound);
@@ -673,47 +674,6 @@ pub async fn set_user_role(
     Ok(Json(json!({ "status": "ok" })))
 }
 
-// ---- Trigger password reset ----------------------------------------------
-
-#[utoipa::path(
-    post,
-    path = "/admin/users/{id}/reset-password",
-    tag = "Admin",
-    params(("id" = Uuid, Path, description = "Target user UUID")),
-    responses(
-        (status = 200, description = "Reset link emailed (or logged in dev)", body = StatusAck),
-        (status = 403, description = "Not an admin"),
-        (status = 404, description = "User not found"),
-    ),
-    security(("session_cookie" = [])),
-)]
-pub async fn admin_send_reset(
-    State(state): State<AppState>,
-    RequireAdmin(actor): RequireAdmin,
-    Path(target_id): Path<Uuid>,
-) -> ApiResult<impl IntoResponse> {
-    let target = users::find_by_id(&state.pool, target_id)
-        .await?
-        .ok_or(ApiError::NotFound)?;
-    if target.status == UserStatus::Deleted {
-        return Err(ApiError::Validation("user is deleted".into()));
-    }
-    email_auth::issue_password_reset(&state, target.id, &target.email).await?;
-    audit::record(
-        &state.pool,
-        audit::AuditEntry {
-            actor_user_id: Some(actor.id),
-            action: "admin.user_password_reset_sent",
-            target_type: Some("user"),
-            target_id: Some(target.id),
-            metadata: json!({}),
-            ip: None,
-        },
-    )
-    .await?;
-    info!(actor = %actor.id, target = %target.id, "admin issued password-reset link");
-    Ok(Json(json!({ "status": "ok" })))
-}
 
 // ---- Disable 2FA ----------------------------------------------------------
 
@@ -834,6 +794,9 @@ pub async fn admin_set_email_route(
         .ok_or(ApiError::NotFound)?;
     if target.status == UserStatus::Deleted {
         return Err(ApiError::Validation("user is deleted".into()));
+    }
+    if target.status == UserStatus::PendingVerification {
+        return Err(ApiError::Validation("delete and re-invite a pending user to change their email".into()));
     }
     if target.email.to_lowercase() == new_email {
         // No-op: same email after normalisation. Don't write or audit.
@@ -983,7 +946,25 @@ pub async fn create_user(
     if !email.contains('@') {
         return Err(ApiError::Validation("email is required and must contain @".into()));
     }
-    if users::find_by_email(&state.pool, &email).await?.is_some() {
+    if let Some(existing) = users::find_by_email(&state.pool, &email).await? {
+        if existing.status == UserStatus::PendingVerification {
+            let live: Option<(Uuid,)> = sqlx::query_as(
+                "SELECT user_id FROM invitations WHERE user_id = $1 AND revoked_at IS NULL AND accepted_at IS NULL",
+            ).bind(existing.id).fetch_optional(&state.pool).await?;
+            if live.is_none() {
+                sqlx::query("UPDATE users SET role = $2 WHERE id = $1 AND status = 'pending_verification'")
+                    .bind(existing.id).bind(body.role).execute(&state.pool).await?;
+                super::invitations::issue(&state, existing.id, Some(actor.id), &email).await?;
+                audit::record(&state.pool, audit::AuditEntry {
+                    actor_user_id: Some(actor.id), action: "admin.invitation_reissued",
+                    target_type: Some("user"), target_id: Some(existing.id),
+                    metadata: json!({}), ip: None,
+                }).await?;
+                return Ok(Json(CreatedUserResponse {
+                    id: existing.id, email, role: body.role, status: existing.status,
+                }));
+            }
+        }
         return Err(ApiError::Validation("email already in use".into()));
     }
 
@@ -997,15 +978,13 @@ pub async fn create_user(
         UserStatus::PendingVerification,
     )
     .await?;
-    if let Err(e) = email_auth::issue_verify_email(&state, id, &email).await {
-        warn!(?e, %id, "create_user: verify-email send failed");
-    }
+    super::invitations::issue(&state, id, Some(actor.id), &email).await?;
 
     audit::record(
         &state.pool,
         audit::AuditEntry {
             actor_user_id: Some(actor.id),
-            action: "admin.user_created",
+            action: "admin.invitation_created",
             target_type: Some("user"),
             target_id: Some(id),
             metadata: json!({
@@ -1025,18 +1004,6 @@ pub async fn create_user(
         role: body.role,
         status: UserStatus::PendingVerification,
     }))
-}
-
-/// Cryptographically random alphanumeric password. Uses the OS RNG via
-/// rand::thread_rng so each invocation produces independent bytes.
-fn generate_random_password(len: usize) -> String {
-    use rand::Rng;
-    const CHARSET: &[u8] =
-        b"ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
-    let mut rng = rand::thread_rng();
-    (0..len)
-        .map(|_| CHARSET[rng.gen_range(0..CHARSET.len())] as char)
-        .collect()
 }
 
 // ---- User bandwidth history ----------------------------------------------
@@ -1515,8 +1482,8 @@ pub async fn set_device_quota(
 // ── Admin device lifecycle ──────────────────────────────────────────────
 // Pause / resume / revoke any device without impersonating (or suspending)
 // its owner — the moderation path for an abusive or compromised peer. The
-// WG/DNS side effects are the same shared cores the owner's handlers use,
-// so the tunnel and resolver stay correct either way; only the audit actor
+// WG side effects are the same shared cores the owner's handlers use,
+// so the tunnel stays correct either way; only the audit actor
 // and action names differ.
 
 #[utoipa::path(
@@ -1610,7 +1577,7 @@ async fn admin_set_device_pause(
     tag = "Admin",
     params(("id" = Uuid, Path, description = "Device UUID")),
     responses(
-        (status = 200, description = "Device revoked; IP released, WG peer + DNS names removed"),
+        (status = 200, description = "Device revoked; IP released and WG peer removed"),
         (status = 403, description = "Not an admin"),
         (status = 404, description = "No such device"),
         (status = 409, description = "Device already revoked"),
@@ -1868,8 +1835,6 @@ pub struct AdminServer {
     pub public_key: String,
     /// CIDR rendered as a string ("10.10.0.0/22").
     pub cidr: String,
-    /// DNS resolvers as plain IP strings (no /32 suffix).
-    pub dns_servers: Vec<String>,
     pub mtu: i32,
     pub is_active: bool,
     /// WireGuard PersistentKeepalive (seconds) for peers on this server.
@@ -1892,7 +1857,6 @@ impl From<Server> for AdminServer {
             endpoint_port: s.endpoint_port,
             public_key: s.public_key,
             cidr: s.cidr.to_string(),
-            dns_servers: s.dns_servers.into_iter().map(|n| n.ip().to_string()).collect(),
             mtu: s.mtu,
             is_active: s.is_active,
             persistent_keepalive: s.persistent_keepalive as i32,
@@ -1945,7 +1909,6 @@ pub struct PatchServerBody {
     pub endpoint_host: Option<String>,
     pub endpoint_port: Option<i32>,
     pub mtu: Option<i32>,
-    pub dns_servers: Option<Vec<String>>,
     /// WireGuard `PersistentKeepalive` (seconds). `0` disables. Bounded to
     /// match the DB CHECK constraint (`0..=3600`).
     pub persistent_keepalive: Option<i32>,
@@ -1961,7 +1924,7 @@ pub struct PatchServerBody {
     request_body = PatchServerBody,
     responses(
         (status = 200, description = "Server config updated", body = StatusAck),
-        (status = 400, description = "Validation error (port / MTU / DNS shape)"),
+        (status = 400, description = "Validation error (port / MTU)"),
         (status = 403, description = "Not an admin"),
     ),
     security(("session_cookie" = [])),
@@ -1986,33 +1949,18 @@ pub async fn patch_server(
                 "persistent_keepalive must be 0..=3600 (0 disables)".into(),
             ));
         }
-    let dns_parsed: Option<Vec<IpNetwork>> = match body.dns_servers.as_ref() {
-        Some(list) => {
-            let mut out = Vec::with_capacity(list.len());
-            for s in list {
-                let ip: std::net::IpAddr = s
-                    .parse()
-                    .map_err(|_| ApiError::Validation(format!("invalid DNS IP: {s}")))?;
-                out.push(IpNetwork::from(ip));
-            }
-            Some(out)
-        }
-        None => None,
-    };
     sqlx::query(
         r#"UPDATE servers
            SET endpoint_host        = COALESCE($2, endpoint_host),
                endpoint_port        = COALESCE($3, endpoint_port),
                mtu                  = COALESCE($4, mtu),
-               dns_servers          = COALESCE($5, dns_servers),
-               persistent_keepalive = COALESCE($6, persistent_keepalive)
+               persistent_keepalive = COALESCE($5, persistent_keepalive)
            WHERE id = $1"#,
     )
     .bind(id)
     .bind(&body.endpoint_host)
     .bind(body.endpoint_port)
     .bind(body.mtu)
-    .bind(dns_parsed)
     .bind(body.persistent_keepalive.map(|v| v as i16))
     .execute(&state.pool)
     .await?;
@@ -2027,7 +1975,6 @@ pub async fn patch_server(
                 "endpoint_host": body.endpoint_host,
                 "endpoint_port": body.endpoint_port,
                 "mtu": body.mtu,
-                "dns_servers": body.dns_servers,
                 "persistent_keepalive": body.persistent_keepalive,
             }),
             ip: None,
@@ -2385,8 +2332,6 @@ pub struct AdminDeviceDetail {
     pub status: zerovpn_core::models::DeviceStatus,
     pub allocated_ip: String,
     pub public_key: String,
-    pub dns_names: Vec<String>,
-    pub dns_override: Option<Vec<String>>,
     #[serde(with = "time::serde::rfc3339::option")]
     pub last_handshake_at: Option<OffsetDateTime>,
     pub last_peer_endpoint: Option<String>,
@@ -2458,8 +2403,6 @@ pub async fn device_detail(
         status: zerovpn_core::models::DeviceStatus,
         allocated_ip: ipnetwork::IpNetwork,
         public_key: String,
-        dns_names: Vec<String>,
-        dns_override: Option<Vec<String>>,
         last_handshake_at: Option<OffsetDateTime>,
         last_peer_endpoint: Option<String>,
         last_peer_endpoint_at: Option<OffsetDateTime>,
@@ -2472,7 +2415,7 @@ pub async fn device_detail(
     }
     let row: Row = sqlx::query_as(
         r#"SELECT id, user_id, server_id, name, os, device_type, status, allocated_ip,
-                  public_key, dns_names, dns_override, last_handshake_at,
+                  public_key, last_handshake_at,
                   last_peer_endpoint, last_peer_endpoint_at, created_at,
                   lifetime_rx_bytes, lifetime_tx_bytes,
                   monthly_byte_cap, current_month_bytes, auto_paused
@@ -2510,8 +2453,6 @@ pub async fn device_detail(
             status: row.status,
             allocated_ip: row.allocated_ip.ip().to_string(),
             public_key: row.public_key,
-            dns_names: row.dns_names,
-            dns_override: row.dns_override,
             last_handshake_at: row.last_handshake_at,
             last_peer_endpoint: row.last_peer_endpoint,
             last_peer_endpoint_at: row.last_peer_endpoint_at,

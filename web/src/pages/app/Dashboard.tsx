@@ -241,7 +241,7 @@ export function DashboardPage() {
       {/* First-device empty state — surfaced only when there are zero
           devices, since the devices table is no longer on this page. The
           CTA opens the same side-sheet wizard used on /app/devices so the
-          two surfaces stay in lockstep (DNS + OS tiles + step-2 QR). */}
+          two surfaces stay in lockstep (OS tiles + step-2 QR). */}
       {devicesQ.data && devicesQ.data.length === 0 && (
         <StaggerItem>
           <Panel>

@@ -65,7 +65,7 @@
         <div class="nav-actions">
           <a
             class="btn btn-ghost"
-            href="https://github.com/bhadri01/ZeroVPN"
+            href="https://github.com/CrimeTracker-Pro/Crime-Tracker-VPN"
             style="padding: 0.4rem 0.8rem"
             >GitHub ↗</a
           >
@@ -110,7 +110,7 @@
             </p>
             <div class="hero-cta">
               <a class="btn btn-primary" href="#get-started">Get started ↓</a>
-              <a class="btn btn-ghost" href="https://github.com/bhadri01/ZeroVPN">View on GitHub ↗</a>
+              <a class="btn btn-ghost" href="https://github.com/CrimeTracker-Pro/Crime-Tracker-VPN">View on GitHub ↗</a>
             </div>
             <div class="kbd">
               <span class="prompt">$</span>
@@ -325,15 +325,12 @@
               <!-- data -->
               <rect class="arch-box" x="600" y="120" width="100" height="42" rx="2" />
               <text class="arch-t" x="650" y="146" text-anchor="middle">Postgres</text>
-              <rect class="arch-box" x="600" y="178" width="100" height="42" rx="2" />
-              <text class="arch-t" x="650" y="204" text-anchor="middle">CoreDNS</text>
 
               <!-- links -->
               <path class="arch-line" d="M140 140 L200 70" />
               <path class="arch-line" d="M140 160 L200 230" />
               <path class="arch-line" d="M340 230 L400 230" />
               <path class="arch-line" d="M340 210 L400 90" />
-              <path class="arch-line" d="M540 230 L600 200" />
               <path class="arch-line" d="M340 220 L600 150" />
               <path class="arch-line" d="M470 200 L470 100" stroke-dasharray="3 3" />
               <path class="arch-line" d="M270 200 L470 100" stroke-dasharray="3 3" />
@@ -345,7 +342,6 @@
             <div class="cell"><span class="lbl">Control</span><h3>API · Rust/axum</h3><p>Auth, devices, admin, and mail. It also brings up the WireGuard interface in its own container — no separate <code class="mono">wg</code> sidecar — and serves the OpenAPI spec.</p></div>
             <div class="cell"><span class="lbl">Worker</span><h3>Poller · ZeroMQ</h3><p>Polls WireGuard peer stats (~1 Hz), rolls up bandwidth, and publishes tick-level samples over a ZeroMQ socket.</p></div>
             <div class="cell"><span class="lbl">Data</span><h3>PostgreSQL 18</h3><p>Sessions, devices, samples, and every application record. The single source of truth for the whole stack.</p></div>
-            <div class="cell"><span class="lbl">Resolver</span><h3>CoreDNS</h3><p>Serves per-peer DNS from a hosts file the API maintains, so devices resolve each other by friendly name.</p></div>
             <div class="cell"><span class="lbl">Wire</span><h3>WireGuard · userspace</h3><p>The API brings up <code class="mono">wg0</code> with userspace boringtun — no host kernel module, no <code class="mono">modprobe</code>.</p></div>
           </div>
 
@@ -376,7 +372,7 @@
             <div class="card">
               <h3 style="margin-bottom: 0.8rem">Authentication</h3>
               <ul style="list-style: none; padding: 0; display: grid; gap: 0.55rem; color: var(--muted-foreground); font-size: 0.92rem">
-                <li>Argon2 password hashing with tuned work factors.</li>
+                <li>Invitation-only access with verified Google sign-in.</li>
                 <li>Server-side sessions over an HTTP-only cookie.</li>
                 <li>Mandatory email verification; reset links emailed by the API.</li>
                 <li>Optional Google OAuth (PKCE) sign-in.</li>
@@ -411,7 +407,7 @@
               <h3>What it never logs <span class="mono" style="color: var(--status-revoked)">✕ content</span></h3>
               <ul>
                 <li>No deep packet inspection or traffic-content capture</li>
-                <li>No DNS-query logging</li>
+                <li>No VPN-managed DNS resolver</li>
                 <li>No destination IPs or browsing history</li>
                 <li>No third-party analytics, trackers, or telemetry off-box</li>
               </ul>
@@ -442,8 +438,8 @@
           <div class="split-2">
             <div>
               <pre class="code"><span class="c"># clone and enter</span>
-git clone https://github.com/bhadri01/ZeroVPN
-cd ZeroVPN
+git clone https://github.com/CrimeTracker-Pro/Crime-Tracker-VPN
+cd Crime-Tracker-VPN
 
 <span class="c"># generate secrets (session, db, KEK)</span>
 make setup
@@ -467,7 +463,7 @@ make up-dev
               <ol class="timeline">
                 <li><span class="t mono">00:00</span><span class="d">Clone &amp; <code class="mono">make setup</code><small>Generates session secret, DB password, and the KEK. Copy the KEK somewhere safe and off-box.</small></span></li>
                 <li><span class="t mono">00:02</span><span class="d"><code class="mono">make up-dev</code><small>API auto-migrates the database and brings up <code class="mono">wg0</code> itself.</small></span></li>
-                <li><span class="t mono">00:05</span><span class="d">Register the first user<small>The first account is promoted to admin automatically.</small></span></li>
+                <li><span class="t mono">00:05</span><span class="d">Sign in as bootstrap admin<small>Configure the admin's verified Google email before startup.</small></span></li>
                 <li><span class="t mono">00:09</span><span class="d">Add a device · scan the QR<small>Server mints the keypair; scan the QR into WireGuard and you're connected.</small></span></li>
                 <li><span class="t mono">00:15</span><span class="d">Live topology &amp; audit<small>Watch peers, bandwidth, and the audit trail update in real time.</small></span></li>
               </ol>
@@ -480,7 +476,7 @@ make up-dev
           </div>
 
           <div class="stack" style="margin-top: 2rem">
-            <a class="btn btn-ghost" href="https://github.com/bhadri01/ZeroVPN#quickstart">README quickstart ↗</a>
+            <a class="btn btn-ghost" href="https://github.com/CrimeTracker-Pro/Crime-Tracker-VPN#quickstart">README quickstart ↗</a>
             <a class="btn btn-ghost" href="./architecture.md">Architecture ↗</a>
             <a class="btn btn-ghost" href="./API.md">API reference ↗</a>
             <a class="btn btn-ghost" href="./runbook.md">Runbook ↗</a>
@@ -515,7 +511,7 @@ make up-dev
             </details>
             <details>
               <summary>What about SSO / bring-your-own auth?</summary>
-              <div class="answer">Email + password with optional TOTP, plus Google OAuth, ship today. OIDC / SAML for enterprise SSO is on the roadmap.</div>
+              <div class="answer">Verified Google sign-in is the only login method, with optional account TOTP. New accounts require an administrator invitation and email-link verification.</div>
             </details>
             <details>
               <summary>What's the license?</summary>
@@ -556,7 +552,7 @@ make up-dev
           <div>
             <h5>Docs</h5>
             <ul>
-              <li><a href="https://github.com/bhadri01/ZeroVPN#readme">README ↗</a></li>
+              <li><a href="https://github.com/CrimeTracker-Pro/Crime-Tracker-VPN#readme">README ↗</a></li>
               <li><a href="./architecture.md">Architecture ↗</a></li>
               <li><a href="./API.md">API reference ↗</a></li>
               <li><a href="./runbook.md">Runbook ↗</a></li>
@@ -565,10 +561,10 @@ make up-dev
           <div>
             <h5>Project</h5>
             <ul>
-              <li><a href="https://github.com/bhadri01/ZeroVPN">GitHub ↗</a></li>
-              <li><a href="https://github.com/bhadri01/ZeroVPN/issues">Issues ↗</a></li>
-              <li><a href="https://github.com/bhadri01/ZeroVPN/releases">Releases ↗</a></li>
-              <li><a href="https://github.com/bhadri01/ZeroVPN/blob/main/LICENSE">License ↗</a></li>
+              <li><a href="https://github.com/CrimeTracker-Pro/Crime-Tracker-VPN">GitHub ↗</a></li>
+              <li><a href="https://github.com/CrimeTracker-Pro/Crime-Tracker-VPN/issues">Issues ↗</a></li>
+              <li><a href="https://github.com/CrimeTracker-Pro/Crime-Tracker-VPN/releases">Releases ↗</a></li>
+              <li><a href="https://github.com/CrimeTracker-Pro/Crime-Tracker-VPN/blob/main/LICENSE">License ↗</a></li>
             </ul>
           </div>
         </div>

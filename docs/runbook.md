@@ -10,7 +10,7 @@ ZeroVPN ships a prod `docker-compose.yml` + single `.env`. Dev vs. prod is drive
 | Env file | `.env` (from `.env.example`) — `ZEROVPN_ENVIRONMENT=dev` | `.env` (same file, edited) — `ZEROVPN_ENVIRONMENT=production` |
 | TLS | self-signed (`ZEROVPN_CERT_RESOLVER` empty → Traefik default cert) | Let's Encrypt (`ZEROVPN_CERT_RESOLVER=le` in `.env`) |
 | Exposed host ports | 80, 443, 51820/udp + loopback-only 18080/5555/55432/56379 | 80, 443, 51820/udp + loopback-only 18080/5555/55432/56379 |
-| Mailer | none by default — the api **logs** verification/reset links (`ZEROVPN_SMTP__HOST` empty); optionally layer `docker-compose.mail.yml` (MailHog) by hand | real SMTP relay (set `ZEROVPN_SMTP__*` in `.env`) |
+| Mailer | none by default — the api **logs** invitation links (`ZEROVPN_SMTP__HOST` empty); optionally layer `docker-compose.mail.yml` (MailHog) by hand | real SMTP relay (set `ZEROVPN_SMTP__*` in `.env`) |
 | WG backend | userspace boringtun (in api-dev) | userspace boringtun (`shell` backend, set in the prod compose; api is the WG host — no `wg` container, no host module) |
 | Session cookie | not Secure (plaintext localhost) | Secure flag set (api enforces when `ZEROVPN_ENVIRONMENT=production`) |
 
@@ -23,17 +23,17 @@ cd zerovpn
 make setup                                  # copies .env.example → .env, generates secrets, builds images
 make up                                     # docker compose --profile dev up -d
 make migrate
-make bootstrap-admin EMAIL=admin@example.com   # interactive password prompt
+make bootstrap-admin EMAIL=admin@example.com   # must match a verified Google account
 ```
 
-The bootstrap admin lands as `must_change_password=TRUE` and is forced through the email-link reset on first login. With no SMTP configured (the dev default) the api logs the reset link — `make logs` / `make logs-dev`.
+The bootstrap admin signs in through Google only. There is no password or public registration flow. Set `ZEROVPN_BOOTSTRAP_ADMIN_EMAIL` before the API's first start.
 
 ## Fast dev loop (native cargo + Vite HMR)
 
-`make up` runs everything in docker — fine for verifying the prod-shape build, but slow when iterating on code (every change = `docker compose build`). For fast iteration, run only the *infrastructure* (db, dnsmasq) in docker and run `api` / `worker` / `frontend` natively. Frontend gets Vite HMR (<100 ms); backend uses cargo's incremental compile (~3–10 s after a small change).
+`make up` runs everything in docker — fine for verifying the prod-shape build, but slow when iterating on code (every change = `docker compose build`). For fast iteration, run only the database in docker and run `api` / `worker` / `frontend` natively. Frontend gets Vite HMR (<100 ms); backend uses cargo's incremental compile (~3–10 s after a small change).
 
 ```
-make dev                                    # one-time: stops dockerized api/worker/frontend, starts db/dnsmasq
+make dev                                    # one-time: stops dockerized api/worker/frontend, starts db
 make dev-migrate                            # run migrations (only first time, or after a new migration)
 make dev-bootstrap-admin EMAIL=you@example.com   # only first time
 
@@ -112,7 +112,6 @@ The api holds `CAP_NET_ADMIN` + `/dev/net/tun` to do this (the security trade-of
 | `wg show` empty / no tunnel | wg0 didn't come up | `docker compose logs api` — look for "wg interface up" vs a `wg-quick up failed` warning. The api needs `NET_ADMIN` + `/dev/net/tun` (both set in compose). |
 | `zmq publisher bind` fails | port 5555 already used | another compose project running; `docker compose down` first. |
 | Maintenance mode locks out admins | The middleware's auth-path bypass exempts `/auth/*`, `/health`, `/ready`. Admin auth still works | Sign in normally; admin role bypasses the 503. |
-| `dnsmasq: failed to load /etc/dnsmasq.d/zerovpn-peers.conf` | Volume empty before first device | Harmless; the worker writes the file when the first peer's DNS name is set. |
 | `wg0.conf` missing in wg container | api hasn't (re)written it from the DB yet, or the shared volume isn't writable | Restart the api — `ensure_default_server` rebuilds `wg0.conf` from `servers.private_key_encrypted` on boot. If it persists, verify the `wg_config` mount on the api service and check logs for "wg0.conf write failed". |
 
 ## Stats pipeline & disk growth
@@ -218,7 +217,7 @@ For zero-downtime upgrades, drain peers off this server first by toggling **main
 - [ ] `ZEROVPN_SMTP__HOST` is a real relay (not `mailhog`); api refuses to boot with placeholders
 - [ ] Firewall: 22/tcp (SSH), 80/tcp (Traefik redirect), 443/tcp (Traefik HTTPS), 51820/udp (WireGuard) — nothing else
 - [ ] `secrets/*.txt` mode 0600, `.env` mode 0600 and not in git (`git check-ignore .env` should print the file)
-- [ ] Admin email/password rotated from the bootstrap default
+- [ ] Bootstrap admin Google email verified and access tested
 - [ ] Off-box backups of `pg_data` + `secrets/` + `.env` configured (the KEK decrypts the server **and** peer keys stored in `pg_data`; `wg_config` is a derived cache and need not be backed up) + verify a restore drill before relying on it
 - [ ] WireGuard works: the api brings up `wg0` itself (userspace boringtun — no host module). Note the internet-facing api runs privileged (`NET_ADMIN` + `/dev/net/tun`) as a result — accept that trade-off or run WG in a separate sidecar
 

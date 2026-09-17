@@ -122,7 +122,7 @@ export function AdminDeviceDetailPage() {
     onSuccess: () => {
       invalidate()
       setRevokeOpen(false)
-      toast.success("Device revoked — IP released, peer and DNS removed")
+      toast.success("Device revoked — IP released and peer removed")
     },
     onError: onActionError,
   })
@@ -301,32 +301,6 @@ export function AdminDeviceDetailPage() {
             />
           </StaggerItem>
 
-          {/* DNS names — read-only (admin view). */}
-          <StaggerItem>
-            <Panel
-              title="DNS names"
-              sub="Reach this peer from others via name.vpn.local"
-              flush
-            >
-              {d.dns_names.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5 p-3">
-                  {d.dns_names.map((n) => (
-                    <span
-                      key={n}
-                      className="border-border bg-card font-mono text-xs"
-                    >
-                      <Kbd>{n}</Kbd>
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <div className="py-8 text-center font-mono text-sm text-muted-foreground">
-                  No DNS names configured.
-                </div>
-              )}
-            </Panel>
-          </StaggerItem>
-
           {/* ── Admin depth below ─────────────────────────────────────── */}
 
           <StaggerItem>
@@ -342,16 +316,6 @@ export function AdminDeviceDetailPage() {
                 <div className="flex flex-col gap-1.5">
                   <Eyebrow>Allocated IP</Eyebrow>
                   <CopyableCode value={d.allocated_ip} />
-                </div>
-                <div className="flex flex-col gap-1.5 sm:col-span-2">
-                  <Eyebrow>DNS override</Eyebrow>
-                  {d.dns_override && d.dns_override.length > 0 ? (
-                    <CopyableCode value={d.dns_override.join(", ")} />
-                  ) : (
-                    <p className="font-mono text-xs text-muted-foreground">
-                      none · server default
-                    </p>
-                  )}
                 </div>
               </div>
             </Panel>
@@ -569,7 +533,7 @@ export function AdminDeviceDetailPage() {
         title="Revoke this device?"
         description={
           d
-            ? `Permanently revokes ${d.name} (owner ${owner?.email ?? "unknown"}): the WG peer is removed, its IP is released for reallocation, and its DNS names stop resolving. The owner keeps their account and other devices.`
+            ? `Permanently revokes ${d.name} (owner ${owner?.email ?? "unknown"}): the WG peer is removed and its IP is released for reallocation. The owner keeps their account and other devices.`
             : undefined
         }
         confirmLabel="Revoke device"

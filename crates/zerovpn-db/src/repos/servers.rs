@@ -7,7 +7,7 @@ use crate::PgPool;
 pub async fn list_active(pool: &PgPool) -> sqlx::Result<Vec<Server>> {
     sqlx::query_as::<_, Server>(
         r#"SELECT id, name, region, endpoint_host, endpoint_port, public_key,
-                  cidr, dns_servers, mtu, is_active, persistent_keepalive
+                  cidr, mtu, is_active, persistent_keepalive
            FROM servers
            WHERE is_active = TRUE
            ORDER BY name"#,
@@ -19,7 +19,7 @@ pub async fn list_active(pool: &PgPool) -> sqlx::Result<Vec<Server>> {
 pub async fn find_by_id(pool: &PgPool, id: Uuid) -> sqlx::Result<Option<Server>> {
     sqlx::query_as::<_, Server>(
         r#"SELECT id, name, region, endpoint_host, endpoint_port, public_key,
-                  cidr, dns_servers, mtu, is_active, persistent_keepalive
+                  cidr, mtu, is_active, persistent_keepalive
            FROM servers
            WHERE id = $1"#,
     )
@@ -38,7 +38,6 @@ pub struct NewServer<'a> {
     /// the api can restore `wg0.conf` from the DB after a `wg_config` volume loss.
     pub private_key_encrypted: &'a [u8],
     pub cidr: IpNetwork,
-    pub dns_servers: Vec<IpNetwork>,
     pub mtu: i32,
 }
 
@@ -46,8 +45,8 @@ pub async fn create(pool: &PgPool, new: NewServer<'_>) -> sqlx::Result<Uuid> {
     let id = Uuid::now_v7();
     sqlx::query(
         r#"INSERT INTO servers (id, name, region, endpoint_host, endpoint_port,
-                                public_key, private_key_encrypted, cidr, dns_servers, mtu, is_active)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE)"#,
+                                public_key, private_key_encrypted, cidr, mtu, is_active)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE)"#,
     )
     .bind(id)
     .bind(new.name)
@@ -57,7 +56,6 @@ pub async fn create(pool: &PgPool, new: NewServer<'_>) -> sqlx::Result<Uuid> {
     .bind(new.public_key)
     .bind(new.private_key_encrypted)
     .bind(new.cidr)
-    .bind(&new.dns_servers)
     .bind(new.mtu)
     .execute(pool)
     .await?;

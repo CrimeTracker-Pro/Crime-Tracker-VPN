@@ -14,13 +14,16 @@ needs to bring the tunnel up.
 
 ## 1. Authentication
 
-The app authenticates with the **normal session login** — there is no
-separate API-token system.
+The app authenticates through the **Google OAuth session flow** — there is no
+password login or separate API-token system. Only accounts invited by an admin
+(or the configured bootstrap admin) can sign in.
 
-1. `POST /api/v1/auth/login` with the user's credentials (and a TOTP step if
-   the account has 2FA enabled).
-2. Keep the returned **session cookie** in the HTTP client's cookie jar.
-3. Send that cookie on the connect request.
+1. Open `/api/v1/auth/google/start` in the system browser and complete Google
+   sign-in. An invitee must verify the emailed invitation first.
+2. Complete `/api/v1/auth/google/callback` with the returned code and state;
+   if prompted, complete `/api/v1/auth/google/verify-totp` as well.
+3. Keep the resulting **session cookie** in the HTTP client's cookie jar and
+   send it on the connect request.
 
 All `/api/v1/devices/*` routes require a valid session; without one they
 return `401`.
@@ -32,7 +35,7 @@ return `401`.
 ```
 POST /api/v1/devices/connect
 Content-Type: application/json
-Cookie: id=<session cookie from login>
+Cookie: zerovpn_session=<session cookie from Google sign-in>
 ```
 
 ```jsonc
@@ -80,7 +83,6 @@ Both provision and reconnect return the same envelope:
   "profile": {
     "private_key": "…base64…",
     "address": "10.10.0.5/32",
-    "dns": ["10.10.0.1"],
     "server_public_key": "…base64…",
     "endpoint": "vpn.example.com:51820",
     "allowed_ips": ["0.0.0.0/0", "::/0"],
@@ -122,7 +124,6 @@ Map `profile` onto the native WireGuard config:
 |-----------------|------|
 | Interface `PrivateKey` | `profile.private_key` |
 | Interface `Address` | `profile.address` |
-| Interface `DNS` | `profile.dns` |
 | Interface `MTU` | `profile.mtu` |
 | Peer `PublicKey` | `profile.server_public_key` |
 | Peer `Endpoint` | `profile.endpoint` |
@@ -132,9 +133,8 @@ Map `profile` onto the native WireGuard config:
 If your platform imports a `.conf` string directly (e.g. desktop WireGuard,
 `wg-quick`), use the `config` field verbatim instead.
 
-This flow always returns a **full-tunnel** profile (`0.0.0.0/0, ::/0`) with
-the server's DNS. Split-tunnel / custom DNS is not exposed here — use the web
-app (`POST /devices`) for that.
+This flow does not configure a DNS resolver. The VPN no longer exposes
+VPN-managed DNS settings or hostname management.
 
 ---
 

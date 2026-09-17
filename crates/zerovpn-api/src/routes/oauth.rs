@@ -19,7 +19,7 @@
 //!      - looks up the user by google_id, then by email (auto-link). Unknown
 //!        identities are denied: accounts are created only by an admin invite
 //!        or the deployment bootstrap-admin setting.
-//!      - mints a session exactly like `/auth/login` and returns the
+//!      - mints a session and returns the
 //!        `LoginResponse` shape so the SPA's auth store hydrates the
 //!        same way.
 //!
@@ -176,9 +176,36 @@ pub async fn google_callback(
     let user = if let Some(u) = users::find_by_google_id(&state.pool, &google_id).await? {
         u
     }
-    // 2) Email matches an existing account — link it on the fly.
+    // 2) Existing active account can link its verified Google identity.
     else if let Some(u) = users::find_by_email(&state.pool, &email).await? {
-        users::link_google(&state.pool, u.id, &google_id).await?;
+        if u.status == UserStatus::PendingVerification {
+            // Consume the verified invitation and activate this exact email
+            // atomically. A direct Google login cannot bypass the mail link.
+            let mut tx = state.pool.begin().await?;
+            let consumed: Option<(uuid::Uuid,)> = sqlx::query_as(
+                "UPDATE invitations SET accepted_at = NOW() WHERE user_id = $1 \
+                 AND verified_at IS NOT NULL AND expires_at > NOW() \
+                 AND revoked_at IS NULL AND accepted_at IS NULL RETURNING user_id",
+            ).bind(u.id).fetch_optional(&mut *tx).await?;
+            if consumed.is_none() { return Err(ApiError::EmailNotVerified); }
+            let updated = sqlx::query(
+                "UPDATE users SET status = 'active', google_id = $2, \
+                 email_verified_at = NOW(), must_change_password = FALSE \
+                 WHERE id = $1 AND status = 'pending_verification' AND google_id IS NULL",
+            ).bind(u.id).bind(&google_id).execute(&mut *tx).await?;
+            if updated.rows_affected() != 1 { return Err(ApiError::Forbidden); }
+            tx.commit().await?;
+            let _ = audit::record_with_ua(&state.pool, audit::AuditEntry {
+                actor_user_id: Some(u.id), action: "auth.invitation_accepted",
+                target_type: Some("user"), target_id: Some(u.id),
+                metadata: json!({ "via": "google" }), ip: req_ip,
+            }, req_ua.as_deref()).await;
+        } else {
+            if u.status != UserStatus::Active { return Err(ApiError::Forbidden); }
+            if users::link_google(&state.pool, u.id, &google_id).await? != 1 {
+                return Err(ApiError::Forbidden);
+            }
+        }
         info!(user_id = %u.id, "linked existing account to google");
         let _ = audit::record_with_ua(
             &state.pool,
@@ -206,7 +233,7 @@ pub async fn google_callback(
         return Err(ApiError::Forbidden);
     };
 
-    if user.status == UserStatus::Suspended {
+    if user.status != UserStatus::Active && user.status != UserStatus::PendingVerification {
         return Err(ApiError::Forbidden);
     }
     if user.status == UserStatus::PendingVerification {
@@ -222,7 +249,7 @@ pub async fn google_callback(
     // ZeroVPN account has its own TOTP enabled we still require it — the
     // Google path must not be a way to skip 2FA. Hold a half-authenticated
     // "pending TOTP" session (NOT the real one) and make the client finish
-    // the challenge via `/auth/google/verify-totp`, mirroring `/auth/login`.
+    // the challenge via `/auth/google/verify-totp`.
     if user.totp_enabled {
         session
             .insert(SESSION_KEY_PENDING_TOTP_USER, user.id)
@@ -352,7 +379,7 @@ pub async fn google_verify_totp(
     let user = users::find_by_id(&state.pool, user_id)
         .await?
         .ok_or_else(|| ApiError::Internal("pending user vanished".to_string()))?;
-    if user.status == UserStatus::Suspended {
+    if user.status != UserStatus::Active {
         return Err(ApiError::Forbidden);
     }
 

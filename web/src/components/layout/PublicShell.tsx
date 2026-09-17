@@ -16,7 +16,7 @@ import { EASING, TIMING, useReducedMotion } from "@/lib/motion"
  * leave the new page stuck at initial opacity when a lazy chunk
  * resolves mid-flight. Simpler is more reliable.
  *
- * Suspense fallback is path-aware so /login + /register get a skeleton
+ * Suspense fallback is path-aware so /login gets a skeleton
  * that matches their actual layout (no jump when the chunk resolves).
  * Other public paths fall back to a small generic skeleton. */
 export function PublicShell() {
@@ -36,13 +36,7 @@ export function PublicShell() {
 }
 
 function PublicFallback({ pathname }: { pathname: string }) {
-  // Login: email + password. Register: email + password + confirm.
-  // Forgot: email only. Reset: password + confirm.
-  if (pathname === "/login") return <AuthSkeleton inputs={2} />
-  if (pathname === "/register") return <AuthSkeleton inputs={3} />
-  if (pathname === "/forgot-password") return <AuthSkeleton inputs={1} />
-  if (pathname === "/reset-password") return <AuthSkeleton inputs={2} />
-  if (pathname === "/app/change-password") return <AuthSkeleton inputs={3} />
+  if (pathname === "/login") return <AuthSkeleton />
   // Everything else — small centered skeleton.
   return (
     <div className="flex min-h-svh items-center justify-center p-6">
@@ -55,7 +49,7 @@ function PageMount({ children }: { children: React.ReactNode }) {
   const reduce = useReducedMotion()
   if (reduce) return <div className="relative">{children}</div>
   // Matches the dashboard's PageMount feel — same timing, easing, and
-  // entry-delay so /login → /register → /app reads as a single coherent
+  // entry-delay so /login → /app reads as a single coherent
   // transition style across both shells.
   return (
     <motion.div

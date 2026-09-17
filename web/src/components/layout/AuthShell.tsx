@@ -111,15 +111,14 @@ export function AuthFooterRule({
 }
 
 /**
- * Suspense fallback for `/login` and `/register`. Mirrors the AuthShell
+ * Suspense fallback for `/login`. Mirrors the AuthShell
  * + AuthForm layout so the page doesn't shift when the lazy chunk
  * resolves — same 2-column grid, same 360px form well, same
  * heading / field / button / footer-rule rhythm.
  *
- * Pass `inputs=2` for the login shape, `inputs=3` for the register
- * shape (email + password + confirm).
+ * Pass `inputs=0` for the Google-only login shape.
  */
-export function AuthSkeleton({ inputs = 2 }: { inputs?: number }) {
+export function AuthSkeleton({ inputs = 0 }: { inputs?: number }) {
   return (
     <div className="grid min-h-svh grid-cols-1 md:grid-cols-2">
       {/* Left aside — matches AuthShell's promo column exactly so the

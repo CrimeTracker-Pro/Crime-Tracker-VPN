@@ -7,7 +7,7 @@ import {
   IconEyeOff,
   IconQrcode,
 } from "@tabler/icons-react"
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { toast } from "sonner"
 
 import { CopyableCode } from "@/components/CopyableCode"
@@ -30,18 +30,14 @@ import {
   type CreatedDevice,
   type DeviceOs,
   type DeviceType,
-  type DnsCheck,
-  checkDnsName,
   createDevice,
   listDevices,
   meServer,
   myUsage,
-  setDeviceDns,
 } from "@/lib/api"
 import { formatBytes } from "@/lib/units"
 import { copyText } from "@/lib/clipboard"
 import { DEVICE_TYPE_OPTIONS, OS_OPTIONS } from "@/lib/deviceIcons"
-import { useAuth } from "@/stores/auth"
 
 type IpMode = "auto" | "custom"
 
@@ -51,12 +47,7 @@ export function AddDeviceDialog({
   onCreated: (d: CreatedDevice) => void
 }) {
   const qc = useQueryClient()
-  const user = useAuth((s) => s.user)
-  // Fetch the user's WG server info (cidr, default DNS, endpoint) so we
-  // can seed sensible defaults: split tunnel ON pointing at the WG
-  // subnet, custom-DNS box pre-filled with the server's resolver, and a
-  // "must be inside <cidr>" hint under the IP input. Cached for the
-  // session — server config almost never changes mid-flight.
+  // Server CIDR validates custom IP allocation.
   const serverInfoQ = useQuery({
     queryKey: ["me", "server"],
     queryFn: meServer,
@@ -89,10 +80,6 @@ export function AddDeviceDialog({
   const [deviceType, setDeviceType] = useState<DeviceType | "">("")
   const [ipMode, setIpMode] = useState<IpMode>("auto")
   const [ipInput, setIpInput] = useState("")
-  // DNS prefix derives from the device/user name until the user edits the
-  // field (`dnsOverride` set) — so name edits keep updating the suggestion
-  // without an effect clobbering anything.
-  const [dnsOverride, setDnsOverride] = useState<string | null>(null)
   // Per-device monthly cap. A toggle decides whether the device is capped
   // at all: off = unlimited (no per-device cap), on = a required GB value.
   // Until the user touches either control (`capOverride` set), the toggle
@@ -111,46 +98,6 @@ export function AddDeviceDialog({
     : accountCapBytes && accountCapBytes > 0
       ? formatCapGb(accountCapBytes)
       : ""
-
-  const userSlug = useMemo(
-    () => dnsLabelSlug(user?.email?.split("@")[0] ?? ""),
-    [user?.email]
-  )
-  const nameSlug = useMemo(() => dnsLabelSlug(name), [name])
-
-  const defaultDnsPrefix = useMemo(() => {
-    if (nameSlug && userSlug) return `${nameSlug}.${userSlug}`
-    return nameSlug || userSlug
-  }, [nameSlug, userSlug])
-
-  const dnsPrefix = dnsOverride ?? defaultDnsPrefix
-  const dnsTouched = dnsOverride !== null
-
-  const dnsFqdn = dnsPrefix ? `${dnsPrefix}.vpn.local` : ""
-
-  const [debouncedFqdn, setDebouncedFqdn] = useState("")
-  useEffect(() => {
-    // An empty value propagates on the next tick (no debounce needed), but
-    // still via the timer so the effect never sets state synchronously.
-    const t = setTimeout(() => setDebouncedFqdn(dnsFqdn), dnsFqdn ? 350 : 0)
-    return () => clearTimeout(t)
-  }, [dnsFqdn])
-
-  const dnsPrefixLocallyValid =
-    dnsPrefix.length > 0 && isValidDnsPrefix(dnsPrefix)
-
-  const dnsCheckQ = useQuery<DnsCheck>({
-    queryKey: ["dns-check", debouncedFqdn],
-    queryFn: () => checkDnsName(debouncedFqdn),
-    enabled: debouncedFqdn.length > 0 && dnsPrefixLocallyValid,
-    staleTime: 30_000,
-    retry: false,
-  })
-
-  const dnsNameTaken =
-    dnsCheckQ.data?.valid === true && dnsCheckQ.data.available === false
-  const dnsNameAvailable =
-    dnsCheckQ.data?.valid === true && dnsCheckQ.data.available === true
 
   const nameTaken =
     name.trim().length > 0 && existingNames.has(name.trim().toLowerCase())
@@ -220,15 +167,6 @@ export function AddDeviceDialog({
           ipMode === "custom" && ipInput.trim() ? ipInput.trim() : undefined,
         monthly_byte_cap: capValidation.bytes,
       })
-      if (dnsFqdn) {
-        try {
-          await setDeviceDns(created.device.id, [dnsFqdn])
-        } catch (e) {
-          const msg =
-            e instanceof ApiError ? e.message : "DNS name could not be saved"
-          toast.warning(`Device created — ${msg}`)
-        }
-      }
       return created
     },
     onSuccess: (data) => {
@@ -250,8 +188,6 @@ export function AddDeviceDialog({
     osChoice !== "" &&
     deviceType !== "" &&
     ipLooksValid &&
-    dnsPrefixLocallyValid &&
-    dnsNameAvailable &&
     capValidation.ok &&
     !addM.isPending
 
@@ -263,7 +199,6 @@ export function AddDeviceDialog({
     setIpMode("auto")
     setIpInput("")
     setResult(null)
-    setDnsOverride(null)
     setCapOverride(null)
   }
 
@@ -327,45 +262,6 @@ export function AddDeviceDialog({
                 options={DEVICE_TYPE_OPTIONS}
                 value={deviceType}
                 onChange={setDeviceType}
-              />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="dev-dns-name" className="zv-eyebrow">
-                DNS name
-              </Label>
-              <div
-                data-invalid={
-                  (dnsPrefix.length > 0 && !dnsPrefixLocallyValid) ||
-                  dnsNameTaken
-                    ? "1"
-                    : undefined
-                }
-                className="flex h-8 items-stretch overflow-hidden rounded-lg border border-input bg-transparent transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 data-[invalid=1]:border-destructive data-[invalid=1]:ring-3 data-[invalid=1]:ring-destructive/20"
-              >
-                <input
-                  id="dev-dns-name"
-                  value={dnsPrefix}
-                  onChange={(e) => setDnsOverride(e.target.value.toLowerCase())}
-                  placeholder={defaultDnsPrefix || "macbook-pro.bhadri"}
-                  spellCheck={false}
-                  autoCapitalize="off"
-                  autoCorrect="off"
-                  className="min-w-0 flex-1 bg-transparent px-2.5 py-1 font-mono text-sm text-foreground outline-none placeholder:text-muted-foreground"
-                />
-                <span className="inline-flex shrink-0 items-center border-l border-input bg-muted/40 px-2.5 font-mono text-[12px] text-muted-foreground">
-                  .vpn.local
-                </span>
-              </div>
-              <DnsNameStatus
-                prefix={dnsPrefix}
-                locallyValid={dnsPrefixLocallyValid}
-                checking={dnsCheckQ.isFetching && debouncedFqdn === dnsFqdn}
-                taken={dnsNameTaken}
-                available={dnsNameAvailable}
-                defaultPrefix={defaultDnsPrefix}
-                touched={dnsTouched}
-                onReset={() => setDnsOverride(null)}
               />
             </div>
 
@@ -636,7 +532,6 @@ function Step2Result({
         <div className="grid gap-3 md:grid-cols-2">
           <ConfigSection title="Interface" eyebrow="Local peer">
             <ConfigRow label="Address" value={parsed.interface.address} mono />
-            <ConfigRow label="DNS" value={parsed.interface.dns} mono />
             <ConfigRow label="MTU" value={parsed.interface.mtu} mono />
             {parsed.interface.privateKey && (
               <SecretRow
@@ -794,7 +689,6 @@ function SecretRow({ label, value }: { label: string; value: string }) {
 interface ParsedConf {
   interface: {
     address?: string
-    dns?: string
     mtu?: string
     privateKey?: string
   }
@@ -829,7 +723,6 @@ function parseWgConf(src: string): ParsedConf {
     const value = line.slice(eq + 1).trim()
     if (section === "interface") {
       if (key === "address") out.interface.address = value
-      else if (key === "dns") out.interface.dns = value
       else if (key === "mtu") out.interface.mtu = value
       else if (key === "privatekey") out.interface.privateKey = value
     } else if (section === "peer") {
@@ -842,86 +735,6 @@ function parseWgConf(src: string): ParsedConf {
     }
   }
   return out
-}
-
-function DnsNameStatus({
-  prefix,
-  locallyValid,
-  checking,
-  taken,
-  available,
-  defaultPrefix,
-  touched,
-  onReset,
-}: {
-  prefix: string
-  locallyValid: boolean
-  checking: boolean
-  taken: boolean
-  available: boolean
-  defaultPrefix: string
-  touched: boolean
-  onReset: () => void
-}) {
-  let body: React.ReactNode
-  if (!prefix) {
-    body = "Required. Defaults to <device>.<user>.vpn.local."
-  } else if (!locallyValid) {
-    body = (
-      <span className="text-destructive">
-        invalid hostname — labels are 1–30 lowercase chars (letters, digits,
-        hyphens), separated by dots, no leading/trailing hyphen
-      </span>
-    )
-  } else if (checking) {
-    body = "Checking availability…"
-  } else if (taken) {
-    body = (
-      <span className="text-destructive">
-        already taken — try another label
-      </span>
-    )
-  } else if (available) {
-    body = (
-      <span className="text-status-online">
-        available — peers can resolve this device by this name
-      </span>
-    )
-  } else {
-    body = "Other peers will be able to resolve this device by this name."
-  }
-  const canReset = touched && defaultPrefix && prefix !== defaultPrefix
-  return (
-    <p className="flex items-center justify-between gap-2 font-mono text-[11px] text-muted-foreground">
-      <span className="min-w-0 truncate">{body}</span>
-      {canReset && (
-        <button
-          type="button"
-          onClick={onReset}
-          className="shrink-0 underline-offset-2 hover:text-foreground hover:underline"
-        >
-          reset to default
-        </button>
-      )}
-    </p>
-  )
-}
-
-function dnsLabelSlug(input: string): string {
-  return input
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 30)
-    .replace(/-$/, "")
-}
-
-function isValidDnsPrefix(prefix: string): boolean {
-  if (!prefix) return false
-  const labelRe = /^[a-z0-9]([a-z0-9-]{0,28}[a-z0-9])?$/
-  return prefix.split(".").every((p) => labelRe.test(p))
 }
 
 function IpModeOption({

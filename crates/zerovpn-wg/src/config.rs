@@ -6,7 +6,7 @@ use askama::Template;
     source = r#"[Interface]
 PrivateKey = {{ private_key }}
 Address = {{ address }}
-DNS = {{ dns }}{% if mtu.is_some() %}
+{% if mtu.is_some() %}
 MTU = {{ mtu.unwrap() }}{% endif %}
 
 [Peer]
@@ -22,7 +22,6 @@ PersistentKeepalive = {{ keepalive }}
 pub struct PeerConfig<'a> {
     pub private_key: &'a str,
     pub address: &'a str,
-    pub dns: &'a str,
     pub mtu: Option<u16>,
     pub server_public_key: &'a str,
     pub preshared_key: Option<&'a str>,

@@ -1,19 +1,19 @@
 {% extends "base.html" %}
 {% import "_components.html" as ui %}
 
-{% block subject %}Verify your ZeroVPN email{% endblock %}
-{% block preheader %}Confirm your email address to finish setting up your ZeroVPN account.{% endblock %}
-{% block eyebrow %}Account · Email verification{% endblock %}
-{% block title %}Verify your email{% endblock %}
+{% block subject %}You're invited to Crime Tracker VPN{% endblock %}
+{% block preheader %}Verify your invitation, then sign in with Google.{% endblock %}
+{% block eyebrow %}Account · Invitation{% endblock %}
+{% block title %}Accept your invitation{% endblock %}
 
 {% block content %}
-  {% call ui::lead("Welcome to ZeroVPN. Click the button below to confirm your email address and finish setting up your account.") %}{% endcall %}
+  {% call ui::lead("An administrator invited you to Crime Tracker VPN. Verify this email address, then sign in with the same Google account.") %}{% endcall %}
 
-  {% call ui::button(label="Verify email", href=link) %}{% endcall %}
+  {% call ui::button(label="Verify invitation", href=link) %}{% endcall %}
 
   {% call ui::code_url(href=link) %}{% endcall %}
 
-  {% call ui::small("This link expires in 24 hours. If you didn't sign up for ZeroVPN, you can ignore this email — no account has been created.") %}{% endcall %}
+  {% call ui::small("This link expires in 24 hours. If you were not expecting this invitation, you can ignore it.") %}{% endcall %}
 {% endblock %}
 
-{% block why %}You're receiving this email because someone (hopefully you) signed up for ZeroVPN with this address.{% endblock %}
+{% block why %}You're receiving this email because an administrator invited this address.{% endblock %}

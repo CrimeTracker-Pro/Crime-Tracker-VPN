@@ -125,8 +125,6 @@ export interface PublicDevice {
   allocated_ip: string
   status: DeviceStatus
   server_id: string
-  dns_names: string[]
-  dns_override: string[] | null
   last_handshake_at: string | null
   /** Public host:port the peer last connected from, as seen by the WG
    *  poller. `null` until the first handshake; persists as the last
@@ -158,22 +156,6 @@ export interface CreatedDevice {
 
 // --- endpoints -----------------------------------------------------------
 
-export const register = (body: { email: string; password: string }) =>
-  apiFetch<{ status: string }>("/auth/register", {
-    method: "POST",
-    body: JSON.stringify(body),
-  })
-
-export const login = (body: {
-  email: string
-  password: string
-  totp_code?: string
-}) =>
-  apiFetch<LoginResponse>("/auth/login", {
-    method: "POST",
-    body: JSON.stringify(body),
-  })
-
 export const logout = () =>
   apiFetch<{ status: string }>("/auth/logout", { method: "POST" })
 
@@ -184,6 +166,24 @@ export const logout = () =>
  * inside a fetch().
  */
 export const googleStartUrl = `${BASE}/auth/google/start`
+
+export const verifyInvitation = (token: string) =>
+  apiFetch<{ status: string }>("/auth/invitations/verify", {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  })
+
+export interface PendingInvitation {
+  user_id: string
+  email: string
+  expires_at: string
+  verified_at: string | null
+}
+export const adminListInvitations = () => apiFetch<PendingInvitation[]>("/admin/invitations")
+export const adminResendInvitation = (id: string) =>
+  apiFetch<{ status: string }>(`/admin/invitations/${id}/resend`, { method: "POST" })
+export const adminRevokeInvitation = (id: string) =>
+  apiFetch<{ status: string }>(`/admin/invitations/${id}/revoke`, { method: "POST" })
 
 /** Complete the Google OAuth round-trip — called by the SPA's
  *  `/google/callback` page with the `code` + `state` Google appended to
@@ -206,11 +206,10 @@ export const googleVerifyTotp = (totp_code: string) =>
 export const me = () => apiFetch<PublicUser>("/me")
 
 /** Public-safe info about the user's WG server — used by the create-device
- * dialog to pre-fill defaults (DNS, split-tunnel CIDR) and render hints
+ * dialog to pre-fill defaults and render hints
  * ("must be inside <cidr>"). */
 export interface MyServerInfo {
   cidr: string
-  dns_servers: string[]
   endpoint_host: string
   endpoint_port: number
   mtu: number
@@ -336,49 +335,6 @@ export const setMyTopology = (positions: Record<string, TopologyPosition>) =>
     body: JSON.stringify({ positions }),
   })
 
-/** Verify-email response. The server upgrades the caller's session as
- *  part of a successful verify so the frontend can navigate straight to
- *  /app without an additional sign-in hop. */
-export interface VerifyEmailResponse {
-  status: string
-  user: PublicUser
-}
-export const verifyEmail = (token: string) =>
-  apiFetch<VerifyEmailResponse>("/auth/verify-email", {
-    method: "POST",
-    body: JSON.stringify({ token }),
-  })
-
-export const resendVerify = (email: string) =>
-  apiFetch<{ status: string }>("/auth/resend-verify", {
-    method: "POST",
-    body: JSON.stringify({ email }),
-  })
-
-export const forgotPassword = (email: string) =>
-  apiFetch<{ status: string }>("/auth/forgot-password", {
-    method: "POST",
-    body: JSON.stringify({ email }),
-  })
-
-export const resetPassword = (token: string, new_password: string) =>
-  apiFetch<{ status: string }>("/auth/reset-password", {
-    method: "POST",
-    body: JSON.stringify({ token, new_password }),
-  })
-
-/** Authenticated change-password. Used by the in-app Settings → Change password
- *  panel — keeps the current session alive while invalidating every
- *  other session for this user. */
-export const changePassword = (
-  current_password: string,
-  new_password: string
-) =>
-  apiFetch<{ status: string }>("/me/change-password", {
-    method: "POST",
-    body: JSON.stringify({ current_password, new_password }),
-  })
-
 /** "Sign out everywhere" — invalidates every session for the current
  *  user except the one that called this endpoint. The current session
  *  stays alive (the server re-syncs the watermark snapshot in-place). */
@@ -402,22 +358,6 @@ export const mySessions = () => apiFetch<MySession[]>("/me/sessions")
 export const revokeSession = (id: string) =>
   apiFetch<{ status: string }>(`/me/sessions/${id}`, { method: "DELETE" })
 
-/** Pre-flight check for a reset-password link. Lets the form surface
- *  an "expired" state before the user types a new password. `reason`
- *  distinguishes "invalid" (no such token — usually a stale link from a
- *  reset DB or a mangled URL), "used" (consumed, typically because the
- *  user requested a newer reset email after this one), "expired" (past
- *  TTL), or "wrong_purpose". Omitted when valid. */
-export interface ResetTokenCheck {
-  valid: boolean
-  reason?: "invalid" | "used" | "wrong_purpose" | "expired"
-}
-export const verifyResetToken = (token: string) =>
-  apiFetch<ResetTokenCheck>("/auth/verify-reset-token", {
-    method: "POST",
-    body: JSON.stringify({ token }),
-  })
-
 export const listDevices = () => apiFetch<PublicDevice[]>("/devices")
 
 export const getDevice = (id: string) =>
@@ -427,7 +367,6 @@ export const createDevice = (body: {
   name: string
   os?: DeviceOs
   device_type?: DeviceType
-  dns_override?: string[]
   /** Optional manual IPv4 — when set, the server reserves exactly this
    *  address. Omit to let the allocator pick the next free slot. */
   allocated_ip?: string
@@ -454,7 +393,6 @@ export const patchDevice = (
     name?: string
     os?: DeviceOs
     device_type?: DeviceType
-    dns_override?: string[] | null
   }
 ) =>
   apiFetch<{ status: string }>(`/devices/${id}`, {
@@ -491,12 +429,6 @@ export const reorderDevices = (ids: string[]) =>
     body: JSON.stringify({ ids }),
   })
 
-export const setDeviceDns = (id: string, dns_names: string[]) =>
-  apiFetch<{ dns_names: string[] }>(`/devices/${id}/dns`, {
-    method: "PUT",
-    body: JSON.stringify({ dns_names }),
-  })
-
 /** User-facing per-device monthly cap setter. Pass `null` (or 0) to
  *  clear the device-level cap — the account cap still applies. The
  *  server clamps explicit values to the caller's own account cap. */
@@ -531,17 +463,6 @@ export const listDeviceEvents = (
   const qs = params.toString()
   return apiFetch<DeviceEvent[]>(`/devices/${id}/events${qs ? `?${qs}` : ""}`)
 }
-
-/** Pre-flight DNS-name availability probe used by the create-device
- *  dialog. Returns whether the candidate FQDN matches the server regex
- *  and whether it's currently held by some other device. */
-export interface DnsCheck {
-  valid: boolean
-  available: boolean
-  reason?: "invalid" | "taken"
-}
-export const checkDnsName = (name: string) =>
-  apiFetch<DnsCheck>(`/devices/dns-check?name=${encodeURIComponent(name)}`)
 
 // --- raw tick-level history (server-side bandwidth_samples / server_samples) ---
 // Used to hydrate the live charts on page load. The chart then continues
@@ -814,7 +735,6 @@ interface AdminUserDevice {
   os: DeviceOs
   status: DeviceStatus
   allocated_ip: string
-  dns_names: string[]
   last_handshake_at: string | null
   /** Most recent `host:port` the peer connected from (Phase 2 / Stage A). */
   last_peer_endpoint: string | null
@@ -883,8 +803,6 @@ interface AdminDeviceDetail {
   status: DeviceStatus
   allocated_ip: string
   public_key: string
-  dns_names: string[]
-  dns_override: string[] | null
   last_handshake_at: string | null
   last_peer_endpoint: string | null
   last_peer_endpoint_at: string | null
@@ -916,7 +834,7 @@ export const adminGetDeviceDetail = (id: string) =>
   apiFetch<AdminDeviceDetailResponse>(`/admin/devices/${id}`)
 
 /** Admin moderation controls — pause / resume / revoke any device without
- *  impersonating its owner. Same WG + DNS side effects as the owner's own
+ *  impersonating its owner. Same WG side effects as the owner's own
  *  actions; audit-logged as `admin.device_*` with the owner in metadata. */
 export const adminPauseDevice = (id: string) =>
   apiFetch<{ status: string }>(`/admin/devices/${id}/pause`, { method: "POST" })
@@ -970,14 +888,6 @@ export const adminSetUserRole = (id: string, role: UserRole) =>
   apiFetch<{ status: string }>(`/admin/users/${id}/role`, {
     method: "PUT",
     body: JSON.stringify({ role }),
-  })
-
-/** Email a password-reset link to the user. Reuses the same token
- *  machinery the public forgot-password flow uses, so the user follows
- *  the normal reset UI to set a new password. */
-export const adminSendPasswordReset = (id: string) =>
-  apiFetch<{ status: string }>(`/admin/users/${id}/reset-password`, {
-    method: "POST",
   })
 
 /** Wipe the user's TOTP secret + recovery codes. Used for support
@@ -1362,7 +1272,6 @@ export interface AdminServerRow {
   endpoint_port: number
   public_key: string
   cidr: string
-  dns_servers: string[]
   mtu: number
   is_active: boolean
   /** WireGuard PersistentKeepalive (seconds) handed to peers on this server.
@@ -1383,7 +1292,6 @@ export const adminPatchServer = (
     endpoint_host?: string
     endpoint_port?: number
     mtu?: number
-    dns_servers?: string[]
     persistent_keepalive?: number
   }
 ) =>

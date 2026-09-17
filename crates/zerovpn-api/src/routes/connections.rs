@@ -130,7 +130,7 @@ pub async fn list_all(
     RequireAdmin(_admin): RequireAdmin,
 ) -> ApiResult<impl IntoResponse> {
     // Only surface flows that touch a known VPN peer on at least one
-    // side. Without this every Docker bridge / postgres / dnsmasq
+    // side. Without this every Docker bridge / postgres
     // conntrack entry leaks into the topology as `External` ↔
     // `External` noise — which is exactly what makes the graph
     // unreadable. Peer↔external (peer browsing the internet) and the

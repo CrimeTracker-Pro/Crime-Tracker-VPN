@@ -44,7 +44,6 @@ use zerovpn_db::{PgPool, repos::candles};
 
 const TICK: Duration = Duration::from_secs(6 * 3600);
 
-const VERIFY_TOKEN_RETENTION_HOURS: i64 = 24;
 const SOFT_DELETE_PURGE_DAYS: i64 = 30;
 /// Pending-verification accounts older than this are dropped outright.
 /// Their verify-email TTL is 24 h, so by day 7 the link is long-dead and
@@ -152,18 +151,6 @@ async fn run_once(pool: &PgPool, windows: &RetentionWindows) -> sqlx::Result<()>
     let now = OffsetDateTime::now_utc();
 
     // --- Account-lifecycle cleanup -------------------------------------
-
-    // Expire consumed/expired verification tokens older than 24 h — they
-    // no longer serve any purpose.
-    purge(
-        pool,
-        "purged stale verification tokens",
-        "DELETE FROM verification_tokens
-          WHERE (consumed_at IS NOT NULL OR expires_at < $1)
-            AND created_at < $1",
-        now - time::Duration::hours(VERIFY_TOKEN_RETENTION_HOURS),
-    )
-    .await?;
 
     // Expired OAuth states. `consume` deletes a row on use and filters on
     // `expires_at`, so this is purely a growth bound for abandoned sign-in

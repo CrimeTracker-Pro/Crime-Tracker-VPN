@@ -71,7 +71,7 @@ export function HomeRedirect() {
 }
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading, mustChangePassword } = useAuth()
+  const { user, loading } = useAuth()
   if (loading) {
     // Bootstrapping the session cookie — usually < 150 ms. Render the
     // animated brand loader so even sub-second boots show consistent
@@ -79,7 +79,6 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <LogoLoader caption="restoring session" />
   }
   if (!user) return <Navigate to="/login" replace />
-  if (mustChangePassword) return <Navigate to="/app/change-password" replace />
   return <>{children}</>
 }
 

@@ -122,7 +122,7 @@ async fn write_server_conf(private_key: &str, listen_port: i32, cidr: IpNetwork)
         // hard-coded IPv4 range.
         IpNetwork::V6(network) => format!("{}/{}", network.network(), network.prefix()),
     };
-    // No PostUp/PostDown: forwarding/NAT/DNS-DNAT is applied best-effort by
+    // No PostUp/PostDown: forwarding/NAT is applied best-effort by
     // `ensure_wg_interface_up` after bring-up, so a failing iptables rule can't
     // make wg-quick roll the whole interface back.
     let conf = format!(
@@ -290,7 +290,6 @@ pub async fn ensure_default_server(pool: &PgPool, kek: &Kek) -> anyhow::Result<(
     let encrypted = kek.encrypt(private_key.as_bytes())?;
 
     let cidr: IpNetwork = "10.10.0.0/22".parse().unwrap();
-    let dns: IpNetwork = "10.10.0.1/32".parse().unwrap();
 
     let id = servers::create(
         pool,
@@ -302,7 +301,6 @@ pub async fn ensure_default_server(pool: &PgPool, kek: &Kek) -> anyhow::Result<(
             public_key: &public_key,
             private_key_encrypted: &encrypted,
             cidr,
-            dns_servers: vec![dns],
             mtu: 1420,
         },
     )

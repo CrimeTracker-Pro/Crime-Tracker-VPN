@@ -13,7 +13,7 @@ struct Cli {
 enum Cmd {
     /// Run pending DB migrations
     Migrate,
-    /// Bootstrap the very first admin user (interactive password prompt)
+    /// Bootstrap an admin by verified Google email (no password)
     BootstrapAdmin {
         #[arg(long)]
         email: String,
@@ -76,26 +76,20 @@ async fn migrate() -> Result<()> {
 async fn bootstrap_admin(email: String) -> Result<()> {
     let database_url = std::env::var("ZEROVPN_DATABASE_URL")?;
     let pool = zerovpn_db::init_pool(&database_url, 2).await?;
-    let password = inquire::Password::new("Initial admin password (will require change on first login):")
-        .with_display_mode(inquire::PasswordDisplayMode::Masked)
-        .with_help_message("min 12 chars")
-        .prompt()?;
-    if password.len() < 12 {
-        anyhow::bail!("password too short");
-    }
-    let hash = zerovpn_auth::password::hash(&password)?;
+    let email = email.trim().to_lowercase();
+    if !email.contains('@') { anyhow::bail!("valid email required"); }
     let id = uuid::Uuid::now_v7();
     sqlx::query(
         r#"INSERT INTO users (id, email, password_hash, role, status, must_change_password)
-           VALUES ($1, $2, $3, 'admin', 'active', TRUE)
-           ON CONFLICT (email) DO NOTHING"#,
+           VALUES ($1, $2, '!', 'admin', 'active', FALSE)
+           ON CONFLICT (email) DO UPDATE SET role = 'admin', status = 'active',
+               password_hash = '!', must_change_password = FALSE"#,
     )
     .bind(id)
-    .bind(email.to_lowercase())
-    .bind(hash)
+    .bind(&email)
     .execute(&pool)
     .await?;
-    println!("admin bootstrapped: {email}");
+    println!("admin bootstrapped for Google sign-in: {email}");
     Ok(())
 }
 
@@ -226,4 +220,3 @@ async fn rotate_server_keys(
     );
     Ok(())
 }
-

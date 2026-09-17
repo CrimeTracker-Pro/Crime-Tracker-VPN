@@ -4,7 +4,7 @@
 
 **Please do not open a public issue for security vulnerabilities.**
 
-Report privately through **[GitHub's private vulnerability reporting](https://github.com/bhadri01/ZeroVPN/security/advisories/new)**
+Report privately through **[GitHub's private vulnerability reporting](https://github.com/CrimeTracker-Pro/Crime-Tracker-VPN/security/advisories/new)**
 (the "Report a vulnerability" button on the repository's Security tab). If you cannot use
 that, email the maintainer at **bhadrinathan28@gmail.com** with the details.
 

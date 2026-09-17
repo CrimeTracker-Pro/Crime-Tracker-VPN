@@ -15,7 +15,6 @@ import {
   IconDeviceMobile,
   IconDownload,
   IconFingerprint,
-  IconGlobe,
   IconKey,
   IconListDetails,
   IconPencil,
@@ -23,13 +22,11 @@ import {
   IconPlayerPlay,
   IconPlugConnected,
   IconPlugConnectedX,
-  IconPlus,
   IconRefresh,
   IconSettings,
   IconSparkles,
   IconTerminal2,
   IconTrash,
-  IconX,
 } from "@tabler/icons-react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useParams } from "react-router"
@@ -59,7 +56,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
 import {
   Sheet,
   SheetContent,
@@ -89,7 +85,6 @@ import {
   pauseDevice,
   redownloadDeviceConf,
   rotateDeviceKeys,
-  setDeviceDns,
   unpauseDevice,
 } from "@/lib/api"
 import { copyText } from "@/lib/clipboard"
@@ -106,36 +101,6 @@ const KEEPALIVE_SECS = 30
 const ACTIVITY_PREVIEW_COUNT = 10
 const ACTIVITY_PAGE_SIZE = 30
 
-// Fixed suffix the server's DNS regex requires. Mirrors the
-// `\.vpn\.local$` portion of `validate_hostname` in zerovpn-dns.
-const DNS_SUFFIX = ".vpn.local"
-// Same character class the server enforces — keep in sync with
-// HOSTNAME_RE in crates/zerovpn-dns/src/lib.rs. The prefix is one or more
-// dot-separated labels (e.g. `mac.bhadri`); each label is 1–30 chars,
-// [a-z0-9] at both ends, hyphens allowed inside. Mirrors isValidDnsPrefix
-// in AddDeviceDialog so creating a peer and adding a name later accept the
-// same set of hostnames (multi-label + dots).
-const DNS_LABEL_RE = /^[a-z0-9]([a-z0-9-]{0,28}[a-z0-9])?$/
-
-function isValidDnsPrefix(s: string): boolean {
-  const v = s.trim().toLowerCase()
-  if (!v) return false
-  return v.split(".").every((label) => DNS_LABEL_RE.test(label))
-}
-
-function dnsPrefixError(s: string): string {
-  const v = s.trim()
-  if (!v) return "required"
-  if (v !== v.toLowerCase()) return "lowercase only"
-  if (/[^a-z0-9.-]/i.test(v)) return "letters, digits, hyphens and dots only"
-  for (const label of v.split(".")) {
-    if (!label) return "no leading, trailing or double dots"
-    if (label.length > 30) return "each label is max 30 chars"
-    if (/^-/.test(label)) return "labels can't start with a hyphen"
-    if (/-$/.test(label)) return "labels can't end with a hyphen"
-  }
-  return "invalid hostname"
-}
 
 export function DeviceDetailPage() {
   const { id = "" } = useParams()
@@ -173,7 +138,7 @@ export function DeviceDetailPage() {
   // History hydration so the chart shows real context after a refresh.
   useHistoryHydration({ deviceIds: id ? [id] : [], windowSec: 1800 })
 
-  // Activity timeline: lifecycle, config, DNS, key, and online/offline
+  // Activity timeline: lifecycle, config, key, and online/offline
   // transitions. Polled every 30s so a transition emitted by the worker
   // surfaces without a manual refresh.
   // Inline panel shows just the 10 most recent entries; the rest live behind
@@ -218,10 +183,6 @@ export function DeviceDetailPage() {
   // user will see; once they dismiss the dialog it's gone.
   const [rotateConfirmOpen, setRotateConfirmOpen] = useState(false)
   const [rotated, setRotated] = useState<CreatedDevice | null>(null)
-  // DNS hostname add dialog: text input for a new `<name>.vpn.local`-style
-  // alias. Existing names are listed inline with per-row delete buttons.
-  const [dnsAddOpen, setDnsAddOpen] = useState(false)
-  const [dnsInput, setDnsInput] = useState("")
   // Edit-metadata dialog (name / OS / device type). Gated behind the
   // pencil button in the page header; the shared dialog seeds + saves
   // itself, so this page only owns the open flag.
@@ -251,22 +212,6 @@ export function DeviceDetailPage() {
       void qc.invalidateQueries({ queryKey: ["device", id] })
       void qc.invalidateQueries({ queryKey: ["devices"] })
       toast.success("Device active")
-    },
-    onError: (e: unknown) => {
-      if (e instanceof ApiError) toast.error(e.message)
-    },
-  })
-  // DNS hostnames are managed as a full-list replace under the hood; the
-  // mutation accepts the next list and pushes it server-side. We do
-  // optimistic toasts because the typical operation (add / remove one
-  // entry) is small and the rollback case is just a query invalidate.
-  const dnsM = useMutation({
-    mutationFn: (names: string[]) => setDeviceDns(id, names),
-    onSuccess: () => {
-      setDnsAddOpen(false)
-      setDnsInput("")
-      void qc.invalidateQueries({ queryKey: ["device", id] })
-      toast.success("DNS names updated")
     },
     onError: (e: unknown) => {
       if (e instanceof ApiError) toast.error(e.message)
@@ -337,13 +282,7 @@ export function DeviceDetailPage() {
   const endpoint = server
     ? `${server.endpoint_host}:${server.endpoint_port}`
     : ""
-  const serverDns = server ? server.dns_servers.join(", ") : ""
-
   const allowedIpsForDisplay = "0.0.0.0/0, ::/0"
-  const dnsForDisplay =
-    d.dns_override && d.dns_override.length > 0
-      ? d.dns_override.join(", ")
-      : serverDns || "server default"
 
   return (
     <PageStagger>
@@ -492,52 +431,9 @@ export function DeviceDetailPage() {
         />
       </StaggerItem>
 
-      {/* DNS names — separate panel so the host alias list is first-class
-          (matches the reference VPN-FRONTEND project's DNS Management
-          section). Replaces the inline "Custom DNS" affordance from the
-          previous layout's edit form. */}
-      <StaggerItem>
-        <Panel
-          title="DNS names"
-          sub={
-            <>
-              Reach this peer from other peers via{" "}
-              <span className="zv-kbd">name.vpn.local</span>.
-            </>
-          }
-          right={
-            isRevoked ? null : (
-              <Button size="sm" onClick={() => setDnsAddOpen(true)}>
-                <IconPlus size={12} />
-                Add DNS name
-              </Button>
-            )
-          }
-        >
-          {d.dns_names.length === 0 ? (
-            <p className="font-mono text-[11px] text-muted-foreground/80">
-              No DNS names configured. Add one to give this device a stable
-              hostname.
-            </p>
-          ) : (
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {d.dns_names.map((name) => (
-                <DnsNameChip
-                  key={name}
-                  value={name}
-                  onRemove={() =>
-                    dnsM.mutate(d.dns_names.filter((n) => n !== name))
-                  }
-                  pending={dnsM.isPending}
-                />
-              ))}
-            </div>
-          )}
-        </Panel>
-      </StaggerItem>
 
       {/* Activity timeline — lifecycle, online/offline transitions, and
-          every config / DNS / key change recorded against this device.
+          every config and key change recorded against this device.
           Powered by the audit_logs table; updated lazily so an event the
           worker writes mid-session appears within ~30 s. */}
       <StaggerItem>
@@ -624,7 +520,6 @@ export function DeviceDetailPage() {
         placeholderConfig={renderWgConf({
           device: d,
           allowedIpsForDisplay,
-          dnsForDisplay,
           endpoint,
         })}
         onReissue={() => {
@@ -637,69 +532,6 @@ export function DeviceDetailPage() {
         reissuing={rotateM.isPending}
       />
 
-      {/* Add DNS name dialog — split input (prefix on the left, fixed
-          .vpn.local suffix on the right) so the user types just the
-          short name and we send the full FQDN to the API. The server
-          regex requires the suffix verbatim. */}
-      <Dialog open={dnsAddOpen} onOpenChange={setDnsAddOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Add DNS name</DialogTitle>
-            <DialogDescription>
-              Give this device a hostname other peers can resolve. Type just the
-              prefix — the <span className="zv-kbd">.vpn.local</span> suffix is
-              fixed by the server.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="dns-name" className="zv-eyebrow">
-              Hostname
-            </Label>
-            <DnsHostnameInput
-              value={dnsInput}
-              onChange={setDnsInput}
-              invalid={dnsInput.length > 0 && !isValidDnsPrefix(dnsInput)}
-              onSubmit={() => {
-                const prefix = dnsInput.trim().toLowerCase()
-                if (!isValidDnsPrefix(prefix)) return
-                const full = `${prefix}${DNS_SUFFIX}`
-                if (d.dns_names.includes(full)) return
-                dnsM.mutate([...d.dns_names, full])
-              }}
-            />
-            <p className="text-muted-foreground font-mono text-[11px]">
-              lowercase letters, digits, hyphens · use dots for sub-labels
-              (e.g. mac.bhadri) · each label ≤30 chars, no leading/trailing
-              hyphen.
-              {dnsInput.length > 0 && !isValidDnsPrefix(dnsInput) && (
-                <span className="ml-2 text-destructive">
-                  {dnsPrefixError(dnsInput)}
-                </span>
-              )}
-            </p>
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setDnsAddOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                const prefix = dnsInput.trim().toLowerCase()
-                if (!isValidDnsPrefix(prefix)) return
-                const full = `${prefix}${DNS_SUFFIX}`
-                if (d.dns_names.includes(full)) {
-                  toast.error("That hostname is already in the list")
-                  return
-                }
-                dnsM.mutate([...d.dns_names, full])
-              }}
-              disabled={dnsM.isPending || !isValidDnsPrefix(dnsInput)}
-            >
-              {dnsM.isPending ? "Adding…" : "Add"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <ConfirmDialog
         open={rotateConfirmOpen}
@@ -1031,85 +863,6 @@ function CopyIcon({ value, title }: { value: string; title?: string }) {
   )
 }
 
-/** Split hostname input: editable prefix on the left, fixed `.vpn.local`
- *  suffix on the right. The user only types the short name, but the full
- *  FQDN is what we ultimately submit (the server's regex requires it).
- *  Pressing Enter triggers `onSubmit` so the user can add without
- *  reaching for the mouse. */
-function DnsHostnameInput({
-  value,
-  onChange,
-  invalid,
-  onSubmit,
-}: {
-  value: string
-  onChange: (v: string) => void
-  invalid: boolean
-  onSubmit: () => void
-}) {
-  return (
-    <div
-      data-invalid={invalid ? "1" : undefined}
-      className="flex h-8 items-stretch overflow-hidden rounded-lg border border-input bg-transparent transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 data-[invalid=1]:border-destructive data-[invalid=1]:ring-3 data-[invalid=1]:ring-destructive/20"
-    >
-      <input
-        id="dns-name"
-        value={value}
-        onChange={(e) => onChange(e.target.value.toLowerCase())}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault()
-            onSubmit()
-          }
-        }}
-        placeholder="laptop or mac.bhadri"
-        autoFocus
-        spellCheck={false}
-        autoCapitalize="off"
-        autoCorrect="off"
-        maxLength={200}
-        aria-invalid={invalid}
-        className="min-w-0 flex-1 bg-transparent px-2.5 py-1 font-mono text-sm text-foreground outline-none placeholder:text-muted-foreground"
-      />
-      <span className="inline-flex shrink-0 items-center border-l border-input bg-muted/40 px-2.5 font-mono text-[12px] text-muted-foreground">
-        {DNS_SUFFIX}
-      </span>
-    </div>
-  )
-}
-
-/** Removable DNS hostname chip. Click delete to remove from the device's
- *  dns_names list. Mirrors the reference project's DNS row. */
-function DnsNameChip({
-  value,
-  onRemove,
-  pending,
-}: {
-  value: string
-  onRemove: () => void
-  pending: boolean
-}) {
-  return (
-    <div className="group flex items-center gap-2 border border-border bg-card px-3 py-2">
-      <IconGlobe size={14} className="shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-foreground">
-        {value}
-      </span>
-      <CopyIcon value={value} />
-      <WithTooltip label={`Remove ${value}`}>
-        <button
-          type="button"
-          onClick={onRemove}
-          disabled={pending}
-          className="flex size-6 shrink-0 items-center justify-center border border-border text-muted-foreground transition-colors hover:border-destructive hover:text-destructive"
-          aria-label={`Remove ${value}`}
-        >
-          <IconX size={12} />
-        </button>
-      </WithTooltip>
-    </div>
-  )
-}
 
 /** Per-action visual descriptor for the timeline. The tone tier maps to
  *  the StatusPill colour scheme so the activity feed reads at a glance
@@ -1162,11 +915,6 @@ const ACTION_CATALOG: Record<string, ActionSpec> = {
     label: "Settings updated",
     tone: "info",
     icon: IconSettings,
-  },
-  "device.dns_updated": {
-    label: "DNS names updated",
-    tone: "info",
-    icon: IconGlobe,
   },
   "device.keys_rotated": {
     label: "Keys rotated",
@@ -1385,18 +1133,6 @@ function EventMetadata({
   metadata: Record<string, unknown>
 }) {
   const [open, setOpen] = useState(false)
-  if (action === "device.dns_updated") {
-    const names = Array.isArray(metadata.dns_names)
-      ? (metadata.dns_names as string[])
-      : []
-    if (names.length === 0) return <span>(cleared)</span>
-    return (
-      <span className="truncate">
-        {names.slice(0, 3).join(", ")}
-        {names.length > 3 && ` +${names.length - 3}`}
-      </span>
-    )
-  }
   if (action === "device.paused" || action === "device.unpaused") {
     const to = metadata.to
     if (typeof to === "string") return <span>now {to}</span>
@@ -1875,18 +1611,15 @@ function osToTab(os: DeviceOs): string {
 function renderWgConf({
   device,
   allowedIpsForDisplay,
-  dnsForDisplay,
   endpoint,
 }: {
   device: { allocated_ip: string }
   allowedIpsForDisplay: string
-  dnsForDisplay: string
   endpoint: string
 }) {
   return `[Interface]
 PrivateKey = (held on device — not stored)
 Address    = ${device.allocated_ip}/32
-DNS        = ${dnsForDisplay}
 
 [Peer]
 PublicKey            = (server public key)

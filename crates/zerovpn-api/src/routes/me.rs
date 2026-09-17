@@ -3,18 +3,16 @@ use std::collections::HashMap;
 use axum::{
     Json,
     extract::{Path, Query, State},
-    http::HeaderMap,
     response::IntoResponse,
 };
-use garde::Validate;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use time::OffsetDateTime;
 use tower_sessions::Session;
-use tracing::{info, warn};
+use tracing::info;
 use utoipa::{IntoParams, ToSchema};
 use zerovpn_db::repos::{
-    audit, devices, servers, session_events, topology_positions, user_prefs, user_sessions, users,
+    audit, devices, servers, topology_positions, user_prefs, user_sessions, users,
 };
 
 use crate::{
@@ -60,7 +58,7 @@ pub async fn export(
     // All devices owned by user (regardless of status)
     let devs = sqlx::query_as::<_, zerovpn_core::models::Device>(
         r#"SELECT id, user_id, server_id, name, os, device_type, public_key, allocated_ip,
-                  status, dns_names, allowed_ips_override, dns_override,
+                  status, allowed_ips_override,
                   last_handshake_at, created_at,
                   NULL::bytea AS private_key_encrypted
              FROM devices
@@ -115,10 +113,6 @@ pub struct MyServerInfo {
     /// device dialog to render "must be inside <cidr>" hints and to
     /// pre-fill the split-tunnel allowed_ips.
     pub cidr: String,
-    /// Default DNS resolvers (e.g. ["10.10.0.1"]). Pre-filled as the
-    /// initial value for the create-device "custom DNS" field so users
-    /// don't have to guess.
-    pub dns_servers: Vec<String>,
     /// Public hostname:port the user's clients dial. Echoed back so
     /// the create dialog can show "you'll connect via <host>".
     pub endpoint_host: String,
@@ -148,11 +142,6 @@ pub async fn server_info(
     let s = active.into_iter().next().ok_or(ApiError::NotFound)?;
     Ok(Json(MyServerInfo {
         cidr: format!("{}/{}", s.cidr.network(), s.cidr.prefix()),
-        dns_servers: s
-            .dns_servers
-            .iter()
-            .map(|n| n.ip().to_string())
-            .collect(),
         endpoint_host: s.endpoint_host,
         endpoint_port: s.endpoint_port,
         mtu: s.mtu,
@@ -477,96 +466,6 @@ pub async fn set_preferences(
     Ok(Json(prefs))
 }
 
-/// Soft-delete the user's account: nulls PII, revokes devices/sessions/
-/// tokens, flushes the current session.
-#[derive(Debug, Deserialize, Validate, ToSchema)]
-pub struct ChangePasswordBody {
-    #[garde(length(min = 1))]
-    pub current_password: String,
-    #[garde(length(min = 12, max = 128))]
-    pub new_password: String,
-}
-
-/// Authenticated change-password: verifies the current password and sets
-/// a new one. `update_password` bumps `password_changed_at` which would
-/// invalidate this very request's session on the next hop, so we
-/// re-snapshot the new watermark into the current session — the user
-/// stays signed in here while every *other* session for this account
-/// dies on its next request.
-#[utoipa::path(
-    post,
-    path = "/me/change-password",
-    tag = "Account",
-    request_body = ChangePasswordBody,
-    responses(
-        (status = 200, description = "Password rotated; this session is kept alive while every other session for the user dies on next request", body = StatusAck),
-        (status = 400, description = "Wrong current password / new == current / new too short"),
-        (status = 401, description = "No session"),
-    ),
-    security(("session_cookie" = [])),
-)]
-pub async fn change_password(
-    State(state): State<AppState>,
-    CurrentUser(user): CurrentUser,
-    session: Session,
-    headers: HeaderMap,
-    Json(body): Json<ChangePasswordBody>,
-) -> ApiResult<impl IntoResponse> {
-    body.validate().map_err(|e| ApiError::Validation(e.to_string()))?;
-    if body.current_password == body.new_password {
-        return Err(ApiError::Validation(
-            "new password must differ from current password".into(),
-        ));
-    }
-
-    let current_hash = users::find_password_hash(&state.pool, user.id)
-        .await?
-        .ok_or(ApiError::Unauthorized)?;
-    let ok = zerovpn_auth::password::verify(&body.current_password, &current_hash)?;
-    if !ok {
-        return Err(ApiError::Validation("current password is incorrect".into()));
-    }
-
-    let new_hash = zerovpn_auth::password::hash(&body.new_password)?;
-    users::update_password(&state.pool, user.id, &new_hash).await?;
-
-    // Re-sync the current session's password-watermark snapshot so the
-    // request that just changed the password is not itself logged out.
-    if let Some(new_watermark) = users::find_password_changed_at(&state.pool, user.id).await? {
-        session
-            .insert(SESSION_KEY_PW_CHANGED_AT, new_watermark.unix_timestamp())
-            .await
-            .map_err(|e| ApiError::Internal(e.to_string()))?;
-    }
-
-    audit::record(
-        &state.pool,
-        audit::AuditEntry {
-            actor_user_id: Some(user.id),
-            action: "user.password_changed",
-            target_type: Some("user"),
-            target_id: Some(user.id),
-            metadata: json!({}),
-            ip: None,
-        },
-    )
-    .await?;
-    // Phase 2 / Stage B — session_events row.
-    if let Err(e) = session_events::record(
-        &state.pool,
-        user.id,
-        session_events::SessionEvent::PasswordChange,
-        crate::routes::auth::client_ip(&headers),
-        crate::routes::auth::client_user_agent(&headers).as_deref(),
-        json!({ "via": "settings" }),
-    )
-    .await
-    {
-        warn!(?e, user_id = %user.id, "session_events password_change record failed");
-    }
-    info!(user_id = %user.id, "password changed");
-    Ok(Json(json!({ "status": "ok" })))
-}
 
 /// "Sign out everywhere" — bumps the user's password-watermark which
 /// invalidates every session except the current one (we re-sync the

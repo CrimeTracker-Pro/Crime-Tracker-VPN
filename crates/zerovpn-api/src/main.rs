@@ -85,12 +85,20 @@ async fn main() -> Result<()> {
     // The initial administrator is explicitly configured and can only sign
     // in through a Google account with this verified email. No password or
     // public registration path exists.
-    if let Ok(email) = env::var("ZEROVPN_BOOTSTRAP_ADMIN_EMAIL") {
-        let email = email.trim().to_lowercase();
-        if !email.is_empty() && users::find_by_email(&pool, &email).await?.is_none() {
-            users::create(&pool, &email, "!", UserRole::Admin, UserStatus::Active).await?;
-            info!(email, "created bootstrap admin; awaiting first Google sign-in");
+    let bootstrap_email = env::var("ZEROVPN_BOOTSTRAP_ADMIN_EMAIL").unwrap_or_default();
+    let bootstrap_email = bootstrap_email.trim().to_lowercase();
+    if users::count_active_admins(&pool).await? == 0 {
+        if bootstrap_email.is_empty() {
+            anyhow::bail!("ZEROVPN_BOOTSTRAP_ADMIN_EMAIL is required when no active admin exists");
         }
+        let email = bootstrap_email;
+        if let Some(existing) = users::find_by_email(&pool, &email).await? {
+            sqlx::query("UPDATE users SET role = 'admin', status = 'active', must_change_password = FALSE, password_hash = '!' WHERE id = $1")
+                .bind(existing.id).execute(&pool).await?;
+        } else {
+            users::create(&pool, &email, "!", UserRole::Admin, UserStatus::Active).await?;
+        }
+        info!(email, "bootstrap admin ready for Google sign-in");
     }
 
     // Tower-sessions session store + its own migration.
@@ -484,7 +492,10 @@ async fn main() -> Result<()> {
                     "/admin/impersonate/stop",
                     post(routes::admin::stop_impersonation),
                 )
-                .route("/auth/verify-email", post(routes::email_auth::verify_email))
+                .route("/auth/invitations/verify", post(routes::invitations::verify))
+                .route("/admin/invitations", get(routes::invitations::list))
+                .route("/admin/invitations/{id}/resend", post(routes::invitations::resend))
+                .route("/admin/invitations/{id}/revoke", post(routes::invitations::revoke))
                 .route("/ws", get(routes::ws::ws)),
         )
         .layer(axum::middleware::from_fn_with_state(
@@ -629,7 +640,6 @@ fn event_kind(e: &Event) -> &'static str {
         Event::StatsDelta { .. } => "stats_delta",
         Event::HandshakeChange { .. } => "handshake_change",
         Event::PeerStatusChanged { .. } => "peer_status_changed",
-        Event::DnsUpdated { .. } => "dns_updated",
         Event::ServerHealth { .. } => "server_health",
         Event::ServerSample { .. } => "server_sample",
         Event::DataChanged { .. } => "data_changed",

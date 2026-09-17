@@ -18,7 +18,6 @@ const ACTION_LABELS: Record<string, string> = {
   "device.paused": "Device paused",
   "device.unpaused": "Device resumed",
   "device.reconnected": "Device reconnected",
-  "device.dns_updated": "DNS names updated",
   "device.keys_rotated": "Keys rotated",
   "device.conf_redownloaded": "Config re-downloaded",
   "device.reordered": "Devices reordered",

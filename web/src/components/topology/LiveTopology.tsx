@@ -1181,7 +1181,6 @@ function DeviceSummaryCard({
   if (ownerLabel) rows.push(["owner", ownerLabel])
   rows.push(["system", `${d.os} · ${d.device_type}`])
   rows.push(["vpn ip", d.allocated_ip])
-  if (d.dns_names.length > 0) rows.push(["dns", d.dns_names[0]])
   if (d.last_peer_endpoint) rows.push(["endpoint", d.last_peer_endpoint])
   if (online) {
     rows.push([

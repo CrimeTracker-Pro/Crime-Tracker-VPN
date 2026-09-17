@@ -7,7 +7,7 @@
 //! cookie (which would either need separate signing or be readable by
 //! anything sharing the origin).
 //!
-//! Stored hashed (sha256, hex) — same pattern as `verification_tokens` —
+//! Stored hashed (sha256, hex) — the same pattern as invitation tokens —
 //! so a DB leak doesn't hand an attacker live state values. TTL is short
 //! (a few minutes) because the OAuth round-trip is synchronous;
 //! `consume` performs the validate-then-delete in one statement to make

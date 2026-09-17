@@ -64,6 +64,9 @@ import {
   type UserRole,
   type UserStatus,
   adminCreateUser,
+  adminListInvitations,
+  adminResendInvitation,
+  adminRevokeInvitation,
   adminDeleteUser,
   adminDisableUser2FA,
   adminGetUserPolicy,
@@ -137,6 +140,20 @@ export function UsersPage() {
     queryKey: ["admin", "users", filters, page, pageSize],
     queryFn: () => adminListUsers(filters, pageSize, page * pageSize),
     placeholderData: (prev) => prev,
+  })
+  const invitationsQ = useQuery({
+    queryKey: ["admin", "invitations"],
+    queryFn: adminListInvitations,
+  })
+  const resendInviteM = useMutation({
+    mutationFn: adminResendInvitation,
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ["admin", "invitations"] }); toast.success("Invitation resent") },
+    onError: (e: unknown) => { if (e instanceof ApiError) toast.error(e.message) },
+  })
+  const revokeInviteM = useMutation({
+    mutationFn: adminRevokeInvitation,
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ["admin", "invitations"] }); toast.success("Invitation revoked") },
+    onError: (e: unknown) => { if (e instanceof ApiError) toast.error(e.message) },
   })
 
   const setStatusM = useMutation({
@@ -313,6 +330,21 @@ export function UsersPage() {
             </Button>
           }
         />
+      </StaggerItem>
+
+      <StaggerItem>
+        <Panel>
+          <h2 className="mb-3 font-medium">Pending invitations</h2>
+          {invitationsQ.data?.length ? invitationsQ.data.map((invite) => (
+            <div key={invite.user_id} className="flex flex-wrap items-center justify-between gap-2 border-t border-border py-2 text-sm">
+              <div><span>{invite.email}</span><span className="ml-2 text-muted-foreground">{new Date(invite.expires_at) < new Date() ? "Expired" : invite.verified_at ? "Email verified — awaiting Google sign-in" : "Awaiting email verification"}</span></div>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" disabled={resendInviteM.isPending} onClick={() => resendInviteM.mutate(invite.user_id)}>Resend</Button>
+                <Button size="sm" variant="outline" disabled={revokeInviteM.isPending} onClick={() => revokeInviteM.mutate(invite.user_id)}>Revoke</Button>
+              </div>
+            </div>
+          )) : <p className="text-sm text-muted-foreground">No pending invitations.</p>}
+        </Panel>
       </StaggerItem>
 
       <StaggerItem>
@@ -695,6 +727,7 @@ export function UsersPage() {
         onOpenChange={setInviteOpen}
         onCreated={() => {
           void qc.invalidateQueries({ queryKey: ["admin", "users"] })
+          void qc.invalidateQueries({ queryKey: ["admin", "invitations"] })
         }}
       />
     </PageStagger>
@@ -875,8 +908,7 @@ function InviteUserDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* Keyed on `open` so each open mounts a clean slate (the credentials
-          view takes priority while `created` is set) — no reset effect. */}
+      {/* Keyed on `open` so each open mounts a clean slate. */}
       <InviteUserDialogBody
         key={String(open)}
         onOpenChange={onOpenChange}
@@ -900,7 +932,7 @@ function InviteUserDialogBody({
     mutationFn: (body: AdminCreateUserBody) => adminCreateUser(body),
     onSuccess: () => {
       onCreated()
-      toast.success("Invitation email sent.")
+      toast.success("Invitation created")
       onOpenChange(false)
     },
     onError: (e: unknown) => {

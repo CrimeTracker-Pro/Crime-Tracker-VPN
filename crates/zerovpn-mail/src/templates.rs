@@ -53,43 +53,13 @@ struct VerifyEmailText<'a> {
 
 impl Email for VerifyEmail<'_> {
     fn subject(&self) -> &'static str {
-        "Verify your ZeroVPN email"
+        "You're invited to Crime Tracker VPN"
     }
     fn render_html(&self) -> Result<String, askama::Error> {
         VerifyEmailHtml { link: self.link }.render()
     }
     fn render_text(&self) -> Result<String, askama::Error> {
         VerifyEmailText { link: self.link }.render()
-    }
-}
-
-// ── Password reset ───────────────────────────────────────────────────────
-
-pub struct PasswordReset<'a> {
-    pub link: &'a str,
-}
-
-#[derive(Template)]
-#[template(path = "password_reset.html", escape = "html")]
-struct PasswordResetHtml<'a> {
-    link: &'a str,
-}
-
-#[derive(Template)]
-#[template(path = "password_reset.txt", escape = "none")]
-struct PasswordResetText<'a> {
-    link: &'a str,
-}
-
-impl Email for PasswordReset<'_> {
-    fn subject(&self) -> &'static str {
-        "Reset your ZeroVPN password"
-    }
-    fn render_html(&self) -> Result<String, askama::Error> {
-        PasswordResetHtml { link: self.link }.render()
-    }
-    fn render_text(&self) -> Result<String, askama::Error> {
-        PasswordResetText { link: self.link }.render()
     }
 }
 

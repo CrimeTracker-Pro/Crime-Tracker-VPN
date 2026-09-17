@@ -56,7 +56,7 @@ up-prod: ## Deploy the prod stack from PRE-BUILT images (pull, never build)
 # with $ZEROVPN_IMAGE_TAG (deploy pointer, usually `latest`) and with the
 # commit SHA — so a bad deploy rolls back by setting ZEROVPN_IMAGE_TAG=sha-…
 # in the host's .env and re-running `make up-prod`.
-REGISTRY  := $(or $(shell grep -E '^ZEROVPN_REGISTRY=' .env 2>/dev/null | cut -d= -f2),ghcr.io/bhadri01)
+REGISTRY  := $(or $(shell grep -E '^ZEROVPN_REGISTRY=' .env 2>/dev/null | cut -d= -f2),ghcr.io/crimetracker-pro)
 BASE_TAG  := $(or $(shell grep -E '^ZEROVPN_IMAGE_TAG=' .env 2>/dev/null | cut -d= -f2),latest)
 GIT_SHA   := $(shell git rev-parse --short HEAD)
 APP_IMAGES := zerovpn-api zerovpn-worker zerovpn-frontend
@@ -101,11 +101,11 @@ logs-dev: ## Tail dev-container logs
 	$(COMPOSE_DEVCTR) logs -f --tail=120
 
 # ── Native dev loop ─────────────────────────────────────────────────────────
-# Run db/dnsmasq in docker, but run api/worker/frontend
+# Run db in docker, but run api/worker/frontend
 # natively for fast iteration (cargo incremental, Vite HMR). The api +
 # worker container slots are kept stopped so they don't fight for ports.
 
-DEV_INFRA := db dnsmasq
+DEV_INFRA := db
 
 .PHONY: dev
 dev: ## Native dev: start infra in docker, leave api/worker/frontend for cargo + pnpm
@@ -152,12 +152,12 @@ ps: ## List containers
 
 .PHONY: migrate
 migrate: ## Run pending migrations
-	$(COMPOSE_DEV) exec api zerovpn-cli migrate
+	$(COMPOSE_DEV) run --rm --no-deps --entrypoint zerovpn-cli api migrate
 
 .PHONY: bootstrap-admin
 bootstrap-admin: ## Create the first admin user. EMAIL=admin@example.com required
 	@if [ -z "$(EMAIL)" ]; then echo "Usage: make bootstrap-admin EMAIL=admin@example.com" && exit 1; fi
-	$(COMPOSE_DEV) exec api zerovpn-cli bootstrap-admin --email $(EMAIL)
+	$(COMPOSE_DEV) run --rm --no-deps --entrypoint zerovpn-cli api bootstrap-admin --email "$(EMAIL)"
 
 .PHONY: shell-api
 shell-api: ## Open a shell in the api container

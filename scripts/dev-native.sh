@@ -9,7 +9,7 @@
 #   ./scripts/dev-native.sh cargo run -p zerovpn-worker
 #   ./scripts/dev-native.sh env | grep ZEROVPN_       # inspect resolved values
 #
-# Requires `make dev` to be running (db, dnsmasq up; api +
+# Requires `make dev` to be running (db up; api +
 # worker stopped).
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -48,9 +48,8 @@ export ZEROVPN_BIND_ADDRESS="127.0.0.1:8080"
 
 # Static paths the dockerized api would write into the wg_config volume —
 # in native mode point them at a workspace-local dir we control.
-mkdir -p .dev-native/wg .dev-native/dnsmasq
+mkdir -p .dev-native/wg
 export ZEROVPN_WG__SERVER_CONFIG_PATH="$PWD/.dev-native/wg/wg0.conf"
-export ZEROVPN_WG__DNSMASQ_HOSTS_FILE="$PWD/.dev-native/dnsmasq/zerovpn-peers.conf"
 
 # Peer configs embed the server's `Endpoint`, which other devices on the
 # network must be able to reach — `localhost` only works from this Mac. When

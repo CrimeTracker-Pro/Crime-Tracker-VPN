@@ -1,4 +1,3 @@
-use std::net::IpAddr;
 
 use ipnetwork::IpNetwork;
 use serde::{Deserialize, Serialize};
@@ -106,23 +105,12 @@ pub struct Server {
     /// CIDR for the server's subnet. Serialised as a string ("10.10.0.0/22").
     #[schema(value_type = String, example = "10.10.0.0/22")]
     pub cidr: IpNetwork,
-    /// Default DNS resolvers handed to peers, each formatted as a host
-    /// prefix ("10.10.0.1/32"). The frontend usually trims the prefix
-    /// for display.
-    #[schema(value_type = Vec<String>, example = json!(["10.10.0.1/32"]))]
-    pub dns_servers: Vec<IpNetwork>,
     pub mtu: i32,
     pub is_active: bool,
     /// WireGuard `PersistentKeepalive` (seconds) handed to every peer on
     /// this server — written into the client `.conf` and used by live
     /// `wg set peer` calls. `0` disables keepalive (WG default semantics).
     pub persistent_keepalive: i16,
-}
-
-impl Server {
-    pub fn dns_servers_ips(&self) -> Vec<IpAddr> {
-        self.dns_servers.iter().map(|n| n.ip()).collect()
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, ToSchema)]
@@ -138,10 +126,7 @@ pub struct Device {
     #[schema(value_type = String, example = "10.10.0.5/32")]
     pub allocated_ip: IpNetwork,
     pub status: DeviceStatus,
-    pub dns_names: Vec<String>,
     pub allowed_ips_override: Option<Vec<String>>,
-    #[schema(value_type = Option<Vec<String>>)]
-    pub dns_override: Option<Vec<IpNetwork>>,
     #[serde(with = "time::serde::rfc3339::option")]
     pub last_handshake_at: Option<OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339")]
@@ -153,10 +138,4 @@ pub struct Device {
     #[serde(skip)]
     #[schema(value_type = Option<String>, format = Byte)]
     pub private_key_encrypted: Option<Vec<u8>>,
-}
-
-impl Device {
-    pub fn dns_override_ips(&self) -> Option<Vec<IpAddr>> {
-        self.dns_override.as_ref().map(|v| v.iter().map(|n| n.ip()).collect())
-    }
 }

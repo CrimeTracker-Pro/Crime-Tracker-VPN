@@ -10,8 +10,8 @@ A self-hosted [WireGuard](https://www.wireguard.com/) control plane: manage devi
 admin policy from one fast console, with live telemetry and a full audit trail — and no
 third-party SaaS anywhere in the data path.
 
-[![CI](https://github.com/bhadri01/ZeroVPN/actions/workflows/ci.yml/badge.svg)](https://github.com/bhadri01/ZeroVPN/actions/workflows/ci.yml)
-[![Images](https://github.com/bhadri01/ZeroVPN/actions/workflows/images.yml/badge.svg)](https://github.com/bhadri01/ZeroVPN/actions/workflows/images.yml)
+[![CI](https://github.com/CrimeTracker-Pro/Crime-Tracker-VPN/actions/workflows/ci.yml/badge.svg)](https://github.com/CrimeTracker-Pro/Crime-Tracker-VPN/actions/workflows/ci.yml)
+[![Images](https://github.com/CrimeTracker-Pro/Crime-Tracker-VPN/actions/workflows/images.yml/badge.svg)](https://github.com/CrimeTracker-Pro/Crime-Tracker-VPN/actions/workflows/images.yml)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 ![Rust](https://img.shields.io/badge/Rust-1.95%20·%20edition%202024-b7410e.svg)
 ![React](https://img.shields.io/badge/React-19%20·%20Vite%207-149eca.svg)
@@ -85,7 +85,7 @@ machines. It is deliberately **not** a full-tunnel or anonymity product.
 
 - **User control** — suspend, quota, key-rotate, and impersonate for support.
 - **Device moderation** — pause, resume, or revoke any device directly (WG peer, IP
-  lease, and DNS names torn down atomically) without touching the owner's account.
+  lease reclaimed) without touching the owner's account.
 - **Fleet** — manage WireGuard hub servers, review the session & security event log
   (logins, 2FA, impersonation), and view a fleet-wide topology.
 - **Audit & access logs** — append-only audit log (filterable, with CSV export), a
@@ -109,7 +109,6 @@ flowchart LR
   T --> A[API · axum]
   A -->|hosts wg0| WG[(WireGuard · userspace boringtun)]
   A --> DB[(PostgreSQL 18)]
-  A --> DNS[CoreDNS · per-peer]
   K[Worker] -->|poll ~1 Hz| WG
   K -->|ZeroMQ pub| A
   K --> DB
@@ -133,7 +132,7 @@ The fastest loop — everything in Linux containers with hot-reload and a **real
 WireGuard tunnel** (works on macOS too):
 
 ```bash
-git clone https://github.com/bhadri01/ZeroVPN
+git clone https://github.com/CrimeTracker-Pro/Crime-Tracker-VPN
 cd ZeroVPN
 
 make setup      # copy .env.example → .env and generate secrets (session, db, KEK)
@@ -148,23 +147,24 @@ Then open:
 | API (debug)   | <http://localhost:18080>         |
 | WireGuard     | `udp/51820` on your LAN IP       |
 
-**Register the first user — they are promoted to admin automatically.** First build/compile
-takes a few minutes; watch it with `make logs-dev`.
+Set `ZEROVPN_BOOTSTRAP_ADMIN_EMAIL` to the first administrator's verified Google
+email before starting the API. No public registration or password login exists.
+Admins invite subsequent users; recipients verify the email link and then sign in
+with Google using that same address.
 
 > **Dev email:** with `ZEROVPN_SMTP__HOST` unset (the default), the API doesn't send mail —
-> it **logs** every verification / reset link, so grab them from `make logs-dev`. Point the
+> it **logs** invitation links, so grab them from `make logs-dev`. Point the
 > SMTP block at a real relay (or a manually-layered MailHog) to send for real.
 
-> Note: `make migrate` and `make bootstrap-admin` target the **prod** `api` container. With
-> the `up-dev` stack the API migrates itself on boot, and you bootstrap the admin by simply
-> registering the first account.
+> Note: `make migrate` and `make bootstrap-admin` run the API image as a one-off
+> CLI process. The API also migrates itself and creates the configured admin on boot.
 
 ## Other dev loops
 
 - **Fully-dockerized** (`make up`): the core stack behind Traefik at
   <https://localhost> (self-signed cert). Pair with `make migrate` and
   `make bootstrap-admin EMAIL=you@example.com`.
-- **Native** (`make dev`): runs `db`/dns/mail in Docker and leaves the api, worker, and web
+- **Native** (`make dev`): runs `db` in Docker and leaves the api, worker, and web
   to run natively for the fastest iteration — `make dev-api`, `make dev-worker`,
   `make dev-web` in separate terminals.
 
@@ -215,9 +215,7 @@ secret, the database password, and the **key-encryption key (KEK)**.
 
 Two knobs worth knowing about up front: `ZEROVPN_SESSION_IDLE_MINUTES` sets the sign-in
 idle window (defaults: 7 days in production, 30 in dev — every authenticated request
-refreshes it), and the mail-sending auth endpoints (register / resend-verify /
-forgot-password) are always rate-limited per address **and** per client IP to protect
-your SMTP relay's quota.
+refreshes it). Admin invitations require a configured SMTP relay for production delivery.
 
 > ⚠️ **Guard the KEK.** It seals column-level secrets (TOTP seeds and WireGuard device &
 > server private keys). There is no HSM and no automatic rotation — if you lose it, those
@@ -260,16 +258,15 @@ The API exposes `/health` (liveness), `/ready` (readiness), `/metrics` (Promethe
 │   ├── zerovpn-core/              # domain types
 │   ├── zerovpn-db/                # sqlx queries
 │   ├── zerovpn-wg/                # WireGuard control
-│   ├── zerovpn-auth/              # password (Argon2), sessions, TOTP, KEK
+│   ├── zerovpn-auth/              # sessions, TOTP, KEK
 │   ├── zerovpn-wire/              # shared wire schema (MessagePack)
-│   ├── zerovpn-dns/               # per-peer DNS hosts-file writer (served by CoreDNS)
 │   ├── zerovpn-mail/              # SMTP via lettre (sent by the API)
 │   ├── zerovpn-api/               # axum HTTP + WS binary; hosts wg0; ZeroMQ relay
 │   ├── zerovpn-worker/            # WG poller, bandwidth aggregator, retention purger
 │   └── zerovpn-cli/               # admin CLI (migrate, bootstrap-admin)
 ├── migrations/                    # sqlx migrations
 ├── web/                           # React + Vite frontend (PWA)
-├── deploy/                        # Dockerfiles, Traefik/CoreDNS config
+├── deploy/                        # Dockerfiles, Traefik config
 ├── docs/                          # website + architecture, runbook, API
 ├── Makefile · docker-compose*.yml · .env.example · CHANGELOG.md
 ```
@@ -293,8 +290,8 @@ push.
 
 Please report vulnerabilities privately — see **[SECURITY.md](SECURITY.md)**. ZeroVPN is
 transparent about its limits: keys are stored server-side (not zero-knowledge), the KEK is a
-single operator-provided secret, and it is split-tunnel only. Login is rate-limited per
-email, the mail-sending endpoints per email + client IP, TOTP is enforced on the Google
+single operator-provided secret, and it is split-tunnel only. Invitations are
+rate-limited per email, TOTP is enforced on the Google
 sign-in path too, and sessions are individually revocable from the Security page. The full
 posture — including what it does and does not log — is on the
 [security section](https://bhadri01.github.io/ZeroVPN/#security) of the website.

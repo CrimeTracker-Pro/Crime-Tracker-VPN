@@ -18,7 +18,6 @@ export function DevicesLoadingSkeleton({ viewMode }: { viewMode: ViewMode }) {
             <th>OS</th>
             <th>VPN IP</th>
             <th>Allowed IPs</th>
-            <th>DNS</th>
             <th>Status</th>
             <th className="zv-num">TX</th>
             <th className="zv-num">RX</th>
@@ -46,9 +45,6 @@ export function DevicesLoadingSkeleton({ viewMode }: { viewMode: ViewMode }) {
               </td>
               <td>
                 <Skeleton className="h-3 w-28 rounded-none" />
-              </td>
-              <td>
-                <Skeleton className="h-3 w-24 rounded-none" />
               </td>
               <td>
                 <Skeleton className="h-4 w-14 rounded-none" />

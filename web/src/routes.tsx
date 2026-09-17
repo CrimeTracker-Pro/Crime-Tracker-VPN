@@ -125,7 +125,7 @@ export const router = createBrowserRouter([
         children: [
           { path: "/", element: <HomeRedirect /> },
           { path: "/login", element: <LoginPage /> },
-          { path: "/verify-email", element: <VerifyEmailPage /> },
+          { path: "/invite", element: <VerifyEmailPage /> },
           { path: "/google/callback", element: <GoogleCallbackPage /> },
         ],
       },

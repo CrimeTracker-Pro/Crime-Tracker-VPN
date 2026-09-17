@@ -9,9 +9,9 @@ import {
   AuthHeading,
   AuthShell,
 } from "@/components/layout/AuthShell"
-import { CodeBlock, Pill } from "@/components/swiss"
+import { Pill } from "@/components/swiss"
 import { Button } from "@/components/ui/button"
-import { ApiError, googleStartUrl, verifyEmail } from "@/lib/api"
+import { ApiError, googleStartUrl, verifyInvitation } from "@/lib/api"
 
 type Status = "pending" | "ok" | "fail"
 
@@ -27,12 +27,12 @@ export function VerifyEmailPage() {
   const status: Status = token ? (result?.status ?? "pending") : "fail"
   const message = token
     ? (result?.message ?? "")
-    : "Missing verification token."
+    : "Open the invitation link in your email."
 
   useEffect(() => {
     if (!token) return
     let alive = true
-    verifyEmail(token)
+    verifyInvitation(token)
       .then(() => {
         if (!alive) return
         setResult({
@@ -57,12 +57,12 @@ export function VerifyEmailPage() {
   return (
     <AuthShell>
       <AuthForm>
-        <AuthHeading eyebrow="02 · Verify email">
+        <AuthHeading eyebrow="02 · Invitation">
           {status === "pending"
             ? "Verifying…"
             : status === "ok"
               ? "Check passed."
-              : "Verification failed."}
+              : "Invitation unavailable."}
         </AuthHeading>
 
         <div className="flex items-center gap-3">
@@ -82,18 +82,10 @@ export function VerifyEmailPage() {
 
         {!token ? (
           <p className="text-sm leading-relaxed text-muted-foreground">
-            We sent a token-link to your inbox. Click it to finish creating your
-            account.
+            Ask an administrator to invite your email address, then open the link they send.
           </p>
         ) : (
           <p className="text-sm leading-relaxed">{message}</p>
-        )}
-
-        {!token && (
-          <CodeBlock>{`From: ZeroVPN <noreply@your-domain.tld>
-Subject: Verify your account
-
-→ https://your-host.tld/verify-email?token=eyJhbGciOi…  (24h)`}</CodeBlock>
         )}
 
         {status === "fail" && (

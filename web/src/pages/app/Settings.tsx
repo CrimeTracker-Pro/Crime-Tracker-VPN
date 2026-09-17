@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   IconBell,
   IconCheck,
-  IconKey,
   IconPalette,
   IconSettings,
   IconShield,
@@ -39,7 +38,7 @@ import {
 } from "@/lib/api"
 import { notify, previewChime } from "@/lib/notify"
 import { AccountSections } from "@/pages/app/Account"
-import { ChangePasswordForm, SecuritySections } from "@/pages/app/Security"
+import { SecuritySections } from "@/pages/app/Security"
 
 // ── Sub-nav model ─────────────────────────────────────────────────────
 type SectionKey =
@@ -48,7 +47,6 @@ type SectionKey =
   | "notifications"
   | "account"
   | "security"
-  | "change-password"
 
 interface SectionDef {
   key: SectionKey
@@ -72,13 +70,6 @@ const SECTIONS: SectionDef[] = [
     hash: "security",
     icon: IconShield,
     hint: "2FA, sessions, recovery codes",
-  },
-  {
-    key: "change-password",
-    label: "Change password",
-    hash: "change-password",
-    icon: IconKey,
-    hint: "Rotate your account password",
   },
   {
     key: "appearance",
@@ -264,7 +255,6 @@ export function SettingsPage() {
               {active === "notifications" && <NotificationsSection />}
               {active === "account" && <AccountSections />}
               {active === "security" && <SecuritySections />}
-              {active === "change-password" && <ChangePasswordSection />}
             </motion.div>
           </AnimatePresence>
         </section>
@@ -872,21 +862,6 @@ function NotificationsSection() {
   )
 }
 
-// ── Change password ───────────────────────────────────────────────────
-
-function ChangePasswordSection() {
-  return (
-    <div className="flex flex-col gap-6">
-      <Panel
-        title="Password"
-        sub="argon2id · m=64MB · t=3 · p=4 · changing it signs out every other session"
-      >
-        <ChangePasswordForm />
-      </Panel>
-    </div>
-  )
-}
-
 // ── Small helpers ─────────────────────────────────────────────────────
 
 function PrefRow({
@@ -940,8 +915,3 @@ function PrefToggle({
     </div>
   )
 }
-
-// Suppress unused-warning for the API tokens icon if a future iteration
-// wires it back into the nav. Until then it lives as a reserved export.
-// eslint-disable-next-line react-refresh/only-export-components -- deliberate non-component re-export
-export { IconKey as _IconKey }

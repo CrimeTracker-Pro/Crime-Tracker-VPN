@@ -72,7 +72,7 @@ services:
 
   frontend:
     container_name: zerovpn-frontend
-    image: ${ZEROVPN_REGISTRY:-ghcr.io/bhadri01}/zerovpn-frontend:${ZEROVPN_IMAGE_TAG:-latest}
+    image: ${ZEROVPN_REGISTRY:-ghcr.io/crimetracker-pro}/zerovpn-frontend:${ZEROVPN_IMAGE_TAG:-latest}
     <<: [*default-restart, *default-logging]
     networks:
       - web
@@ -103,7 +103,7 @@ services:
   # your host once (`docker compose logs api` → "wg interface up"; `wg show wg0`).
   api:
     container_name: zerovpn-api
-    image: ${ZEROVPN_REGISTRY:-ghcr.io/bhadri01}/zerovpn-api:${ZEROVPN_IMAGE_TAG:-latest}
+    image: ${ZEROVPN_REGISTRY:-ghcr.io/crimetracker-pro}/zerovpn-api:${ZEROVPN_IMAGE_TAG:-latest}
     <<: [*default-restart, *default-logging]
     env_file: .env
     environment:
@@ -156,7 +156,7 @@ services:
   # subscribes to it on 127.0.0.1:5555. Mirrors the dev topology; requires the
   # api to start first (depends_on below).
   worker:
-    image: ${ZEROVPN_REGISTRY:-ghcr.io/bhadri01}/zerovpn-worker:${ZEROVPN_IMAGE_TAG:-latest}
+    image: ${ZEROVPN_REGISTRY:-ghcr.io/crimetracker-pro}/zerovpn-worker:${ZEROVPN_IMAGE_TAG:-latest}
     <<: [*default-restart, *default-logging]
     env_file: .env
     environment:

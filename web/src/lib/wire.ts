@@ -33,12 +33,6 @@ export type Event =
       status: "active" | "paused" | "revoked"
     }
   | {
-      type: "dns_updated"
-      device_id: string
-      user_id: string
-      dns_names: string[]
-    }
-  | {
       type: "server_health"
       server_id: string
       cpu_pct: number
@@ -88,7 +82,6 @@ export type Event =
         | "paused"
         | "unpaused"
         | "keys_rotated"
-        | "dns_updated"
         | "reordered"
         | "connected"
     }

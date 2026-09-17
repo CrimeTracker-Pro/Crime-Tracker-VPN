@@ -18,7 +18,6 @@ import {
 import { Label } from "@/components/ui/label"
 import {
   ApiError,
-  changePassword,
   mySessions,
   revokeOtherSessions,
   revokeSession,
@@ -435,124 +434,6 @@ function SignOutEverywherePanel() {
   )
 }
 
-export function ChangePasswordForm() {
-  const [current, setCurrent] = useState("")
-  const [next, setNext] = useState("")
-  const [confirm, setConfirm] = useState("")
-
-  const m = useMutation({
-    mutationFn: () => changePassword(current, next),
-    onSuccess: () => {
-      setCurrent("")
-      setNext("")
-      setConfirm("")
-      toast.success(
-        "Password changed. Any other signed-in sessions will be signed out on their next request."
-      )
-    },
-    onError: (e: unknown) => {
-      if (e instanceof ApiError) toast.error(e.message)
-    },
-  })
-
-  const tooShort = next.length > 0 && next.length < 12
-  const mismatch = confirm.length > 0 && next !== confirm
-  const sameAsCurrent =
-    current.length > 0 && next.length > 0 && current === next
-  const canSubmit =
-    !m.isPending &&
-    current.length > 0 &&
-    next.length >= 12 &&
-    next === confirm &&
-    current !== next
-
-  const onSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!canSubmit) return
-    m.mutate()
-  }
-
-  return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-3">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field
-          label="Current password"
-          id="cp-current"
-          value={current}
-          onChange={setCurrent}
-          autoComplete="current-password"
-        />
-        <div className="sm:col-span-1" />
-        <Field
-          label="New password"
-          id="cp-new"
-          value={next}
-          onChange={setNext}
-          autoComplete="new-password"
-          hint={tooShort ? "Minimum 12 characters" : undefined}
-          invalid={tooShort || sameAsCurrent}
-        />
-        <Field
-          label="Confirm new password"
-          id="cp-confirm"
-          value={confirm}
-          onChange={setConfirm}
-          autoComplete="new-password"
-          hint={mismatch ? "Passwords don't match" : undefined}
-          invalid={mismatch}
-        />
-      </div>
-      {sameAsCurrent && (
-        <p className="font-mono text-[11px] text-status-degraded">
-          New password must differ from your current one.
-        </p>
-      )}
-      <div>
-        <Button type="submit" disabled={!canSubmit}>
-          {m.isPending ? "Saving…" : "Change password"}
-        </Button>
-      </div>
-    </form>
-  )
-}
-
-function Field({
-  label,
-  id,
-  value,
-  onChange,
-  autoComplete,
-  hint,
-  invalid,
-}: {
-  label: string
-  id: string
-  value: string
-  onChange: (v: string) => void
-  autoComplete: string
-  hint?: string
-  invalid?: boolean
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <Label htmlFor={id} className="text-xs">
-        {label}
-      </Label>
-      <Input
-        id={id}
-        type="password"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        autoComplete={autoComplete}
-        aria-invalid={invalid || undefined}
-        className="font-mono"
-      />
-      {hint && (
-        <p className="font-mono text-[11px] text-status-degraded">{hint}</p>
-      )}
-    </div>
-  )
-}
 
 /** Trigger a browser download of the recovery codes as a plain .txt
  *  file. We render the codes as a Blob, build an `<a download>`,

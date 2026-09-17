@@ -20,7 +20,7 @@ edition = "2024"
 rust-version = "1.95"
 authors = ["ZeroVPN contributors"]
 license = "AGPL-3.0-or-later"
-repository = "https://github.com/bhadri01/ZeroVPN"
+repository = "https://github.com/CrimeTracker-Pro/Crime-Tracker-VPN"
 readme = "README.md"
 
 [workspace.dependencies]

@@ -46,13 +46,6 @@ pub enum Event {
         status: PeerStatus,
     },
 
-    /// DNS names for a peer changed.
-    DnsUpdated {
-        device_id: Uuid,
-        user_id: Uuid,
-        dns_names: Vec<String>,
-    },
-
     /// Server-wide health snapshot. Emitted by the worker every 5 s for
     /// admin dashboards. CPU%, memory, wg0 tunnel I/O ("Real I/O"),
     /// container network I/O ("Net I/O"), uptime, peer count. CPU/memory/
@@ -177,7 +170,6 @@ pub enum ChangeAction {
     Paused,
     Unpaused,
     KeysRotated,
-    DnsUpdated,
     Reordered,
     Connected,
 }

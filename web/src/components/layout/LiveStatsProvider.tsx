@@ -35,7 +35,6 @@ const DEVICE_ACTION_LABEL: Record<string, string> = {
   paused: "paused",
   unpaused: "resumed",
   keys_rotated: "keys rotated",
-  dns_updated: "DNS updated",
 }
 
 export function LiveStatsProvider() {
@@ -269,7 +268,7 @@ export function LiveStatsProvider() {
           break
         }
         default:
-          // heartbeat, dns_updated — tail handled above
+          // heartbeat — tail handled above
           break
       }
     },

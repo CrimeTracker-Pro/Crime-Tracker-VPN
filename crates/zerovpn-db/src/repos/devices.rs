@@ -12,7 +12,7 @@ pub async fn list_for_user(pool: &PgPool, user_id: Uuid) -> sqlx::Result<Vec<Dev
     // before a user has touched the order.
     sqlx::query_as::<_, Device>(
         r#"SELECT id, user_id, server_id, name, os, device_type, public_key, allocated_ip, status,
-                  dns_names, allowed_ips_override, dns_override,
+                  allowed_ips_override,
                   last_handshake_at, created_at, private_key_encrypted
            FROM devices
            WHERE user_id = $1 AND status <> 'revoked'
@@ -60,7 +60,7 @@ pub async fn find_for_user(
 ) -> sqlx::Result<Option<Device>> {
     sqlx::query_as::<_, Device>(
         r#"SELECT id, user_id, server_id, name, os, device_type, public_key, allocated_ip, status,
-                  dns_names, allowed_ips_override, dns_override,
+                  allowed_ips_override,
                   last_handshake_at, created_at, private_key_encrypted
            FROM devices
            WHERE user_id = $1 AND id = $2"#,
@@ -115,7 +115,7 @@ pub async fn quota_for_user(
 pub async fn list_all_active(pool: &PgPool) -> sqlx::Result<Vec<Device>> {
     sqlx::query_as::<_, Device>(
         r#"SELECT id, user_id, server_id, name, os, device_type, public_key, allocated_ip, status,
-                  dns_names, allowed_ips_override, dns_override,
+                  allowed_ips_override,
                   last_handshake_at, created_at, private_key_encrypted
            FROM devices
            WHERE status <> 'revoked'
@@ -228,23 +228,6 @@ pub async fn update_public_key(
     .bind(user_id)
     .bind(device_id)
     .bind(public_key)
-    .execute(pool)
-    .await?;
-    Ok(res.rows_affected())
-}
-
-pub async fn set_dns_names(
-    pool: &PgPool,
-    user_id: Uuid,
-    device_id: Uuid,
-    names: &[String],
-) -> sqlx::Result<u64> {
-    let res = sqlx::query(
-        "UPDATE devices SET dns_names = $3 WHERE user_id = $1 AND id = $2",
-    )
-    .bind(user_id)
-    .bind(device_id)
-    .bind(names)
     .execute(pool)
     .await?;
     Ok(res.rows_affected())
@@ -454,29 +437,6 @@ pub async fn allocated_ips_for_server(pool: &PgPool, server_id: Uuid) -> sqlx::R
     .fetch_all(pool)
     .await?;
     Ok(rows.into_iter().map(|(n,)| n.ip()).collect())
-}
-
-/// Returns all DNS names registered across all peers — used for unique-name
-/// validation in the app layer until the side-table moves to 1B.
-pub async fn all_dns_names(pool: &PgPool) -> sqlx::Result<Vec<String>> {
-    let rows: Vec<(String,)> = sqlx::query_as(
-        "SELECT unnest(dns_names) FROM devices WHERE status <> 'revoked'",
-    )
-    .fetch_all(pool)
-    .await?;
-    Ok(rows.into_iter().map(|(n,)| n).collect())
-}
-
-/// Active devices in the deployment (used to render the dnsmasq hosts file).
-pub async fn list_active_with_dns(pool: &PgPool) -> sqlx::Result<Vec<(Uuid, IpAddr, Vec<String>)>> {
-    let rows: Vec<(Uuid, IpNetwork, Vec<String>)> = sqlx::query_as(
-        r#"SELECT id, allocated_ip, dns_names
-           FROM devices
-           WHERE status = 'active' AND array_length(dns_names, 1) > 0"#,
-    )
-    .fetch_all(pool)
-    .await?;
-    Ok(rows.into_iter().map(|(id, n, dns)| (id, n.ip(), dns)).collect())
 }
 
 // FromRow on Device is derived in zerovpn-core::models.

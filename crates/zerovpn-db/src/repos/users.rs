@@ -17,23 +17,8 @@ pub async fn find_by_email(pool: &PgPool, email: &str) -> sqlx::Result<Option<Us
     .await
 }
 
-/// Fetch just the password hash for a user. Used by the authenticated
-/// change-password flow which needs to verify the current password
-/// against the stored hash without pulling the rest of the secrets row.
-pub async fn find_password_hash(pool: &PgPool, id: Uuid) -> sqlx::Result<Option<String>> {
-    let row: Option<(String,)> = sqlx::query_as(
-        "SELECT password_hash FROM users WHERE id = $1 AND deleted_at IS NULL",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?;
-    Ok(row.map(|r| r.0))
-}
-
-/// Fetch the live `password_changed_at` watermark. Used right after
-/// `update_password` so the caller can refresh the current session's
-/// snapshot (otherwise the bump made by `update_password` invalidates
-/// the request's own session on the next hop).
+/// Fetch the session-revocation watermark so the caller can refresh its own
+/// snapshot after revoking all other sessions.
 pub async fn find_password_changed_at(
     pool: &PgPool,
     id: Uuid,
@@ -58,28 +43,6 @@ pub async fn find_by_id(pool: &PgPool, id: Uuid) -> sqlx::Result<Option<User>> {
     .bind(id)
     .fetch_optional(pool)
     .await
-}
-
-/// Atomically update a user's password hash and bump the
-/// `password_changed_at` watermark in one statement. The watermark is
-/// what kills any existing sessions for this user — the auth extractor
-/// compares the value snapshotted into the session at login time against
-/// the live column on every request. Always called after the new hash
-/// has been generated (so a hash error short-circuits before we touch
-/// the row).
-pub async fn update_password(pool: &PgPool, id: Uuid, new_hash: &str) -> sqlx::Result<u64> {
-    let res = sqlx::query(
-        r#"UPDATE users
-              SET password_hash = $2,
-                  password_changed_at = NOW(),
-                  must_change_password = FALSE
-            WHERE id = $1 AND deleted_at IS NULL"#,
-    )
-    .bind(id)
-    .bind(new_hash)
-    .execute(pool)
-    .await?;
-    Ok(res.rows_affected())
 }
 
 /// Bump `password_changed_at` without touching the password hash. The
@@ -142,7 +105,7 @@ pub async fn create(
 /// Look up a user by their Google `sub` claim (linked at first OAuth sign-in
 /// or by `link_google` after an email match). Mirrors `find_by_email` —
 /// returns the full secrets row so the OAuth callback can run the same
-/// post-login plumbing (status check, password watermark) as `/auth/login`.
+/// post-login plumbing (status check, session watermark) as the Google callback.
 pub async fn find_by_google_id(
     pool: &PgPool,
     google_id: &str,
@@ -159,34 +122,7 @@ pub async fn find_by_google_id(
     .await
 }
 
-/// Provision a new user from a Google OAuth sign-in. The email is treated
-/// as pre-verified (Google asserts it), so the row lands `active` + with a
-/// verification timestamp — no email click-through required. `password_hash`
-/// uses the same `'!'` sentinel `soft_delete` writes: argon2 can't verify
-/// it, so the password-login path naturally refuses the account until the
-/// user runs the forgot-password flow to set a real hash.
-pub async fn create_google(
-    pool: &PgPool,
-    email: &str,
-    google_id: &str,
-    role: UserRole,
-) -> sqlx::Result<Uuid> {
-    let id = Uuid::now_v7();
-    sqlx::query(
-        r#"INSERT INTO users (id, email, password_hash, role, status,
-                              google_id, email_verified_at)
-           VALUES ($1, $2::CITEXT, '!', $3, 'active', $4, NOW())"#,
-    )
-    .bind(id)
-    .bind(email)
-    .bind(role)
-    .bind(google_id)
-    .execute(pool)
-    .await?;
-    Ok(id)
-}
-
-/// Attach a Google `sub` to an existing (password-based) user. Called on
+/// Attach a Google `sub` to an existing invited or bootstrapped user. Called on
 /// first OAuth sign-in when the Google email matches an existing account —
 /// Google has already verified the email, so we treat that as proof of
 /// ownership and link silently. Idempotent: linking the same google_id

@@ -65,10 +65,6 @@ pub struct CreateBody {
     /// Device form factor (phone, tablet, laptop, …). Independent of `os`.
     #[garde(skip)]
     pub device_type: Option<DeviceType>,
-    /// Optional custom DNS resolvers. Each must parse as an IPv4 or IPv6
-    /// address; rejected if any entry is malformed.
-    #[garde(skip)]
-    pub dns_override: Option<Vec<String>>,
     /// Optional caller-supplied address. When set, the API tries to
     /// reserve exactly this IP in the server's CIDR rather than picking
     /// the next free one. Returns 409 if the address is taken or
@@ -108,8 +104,6 @@ pub struct PublicDevice {
     pub allocated_ip: IpAddr,
     pub status: DeviceStatus,
     pub server_id: Uuid,
-    pub dns_names: Vec<String>,
-    pub dns_override: Option<Vec<String>>,
     #[serde(with = "time::serde::rfc3339::option")]
     pub last_handshake_at: Option<OffsetDateTime>,
     #[serde(with = "time::serde::rfc3339")]
@@ -144,10 +138,6 @@ pub struct PublicDevice {
 
 impl From<Device> for PublicDevice {
     fn from(d: Device) -> Self {
-        let dns_override = d
-            .dns_override
-            .as_ref()
-            .map(|v| v.iter().map(|n| n.ip().to_string()).collect());
         Self {
             id: d.id,
             user_id: d.user_id,
@@ -158,8 +148,6 @@ impl From<Device> for PublicDevice {
             allocated_ip: d.allocated_ip.ip(),
             status: d.status,
             server_id: d.server_id,
-            dns_names: d.dns_names,
-            dns_override,
             last_handshake_at: d.last_handshake_at,
             created_at: d.created_at,
             // Endpoint columns aren't on the core Device row; handlers that
@@ -178,7 +166,7 @@ impl From<Device> for PublicDevice {
 }
 
 /// Split-tunnel AllowedIPs: every device routes only the VPN's own subnet
-/// through the tunnel (peers + the gateway/DNS at 10.10.0.1); all other
+/// through the tunnel (peers + the gateway); all other
 /// traffic uses the client's normal interface. Single value used by every
 /// config the API renders. Must match the server CIDR in `bootstrap.rs`.
 const DEFAULT_ALLOWED_IPS: &str = "10.10.0.0/22";
@@ -316,7 +304,7 @@ pub struct EventsQuery {
 
 /// Returns the audit-log entries targeting this device, newest first.
 /// Powers the device-detail "Activity" timeline: lifecycle events
-/// (created / paused / unpaused / revoked), config + DNS changes, key
+/// (created / paused / unpaused / revoked), config changes, key
 /// rotations, conf re-downloads, and the worker-emitted online/offline
 /// transitions. Ownership is enforced — the caller must own the device.
 #[utoipa::path(
@@ -414,35 +402,6 @@ pub async fn create(
         .encrypt(private_key.as_bytes())
         .map_err(|e| ApiError::Internal(format!("encrypt private key: {e}")))?;
 
-    // Validate optional DNS overrides up-front so we never persist a half-
-    // valid request. We also keep the parsed IPs for the conf below.
-    let dns_override_parsed: Option<Vec<std::net::IpAddr>> = match body.dns_override.as_ref() {
-        Some(list) if !list.is_empty() => {
-            let mut out = Vec::with_capacity(list.len());
-            for s in list {
-                let trimmed = s.trim();
-                if trimmed.is_empty() {
-                    continue;
-                }
-                let ip: std::net::IpAddr = trimmed
-                    .parse()
-                    .map_err(|_| ApiError::Validation(format!("invalid DNS IP: {trimmed}")))?;
-                out.push(ip);
-            }
-            if out.is_empty() { None } else { Some(out) }
-        }
-        _ => None,
-    };
-
-    let dns_override_inet: Option<Vec<IpNetwork>> = dns_override_parsed.as_ref().map(|v| {
-        v.iter()
-            .map(|ip| {
-                IpNetwork::new(*ip, if ip.is_ipv4() { 32 } else { 128 })
-                    .expect("valid host prefix")
-            })
-            .collect()
-    });
-
     // Best-effort: persist the device row. If it fails we must release the IP.
     let host_prefix = if ip.is_ipv4() { 32 } else { 128 };
     let allocated_cidr = IpNetwork::new(ip, host_prefix).expect("valid host prefix");
@@ -469,19 +428,6 @@ pub async fn create(
             return Err(e.into());
         }
     };
-
-    // Apply the optional DNS override after insert (plain UPDATE keeps
-    // `NewDevice` minimal). AllowedIPs is always full-tunnel now, so there's
-    // no allowed_ips_override to write.
-    if let Some(dns) = dns_override_inet.as_deref() {
-        sqlx::query(r#"UPDATE devices SET dns_override = $3 WHERE user_id = $1 AND id = $2"#)
-            .bind(user.id)
-            .bind(device_id)
-            .bind(dns)
-            .execute(&state.pool)
-            .await
-            .map_err(|e| ApiError::Internal(format!("apply create overrides: {e}")))?;
-    }
 
     // Seed the per-device monthly cap. If the body supplied one, it's
     // clamped to the user's account cap (a device can't exceed the
@@ -515,7 +461,6 @@ pub async fn create(
             metadata: json!({
                 "name": body.name,
                 "server": server.name,
-                "dns_override": body.dns_override,
                 "monthly_byte_cap": effective_cap,
             }),
             ip: None,
@@ -525,19 +470,6 @@ pub async fn create(
 
     // Render the WG config for the user. The private key is held only here,
     // never persisted.
-    let dns_str = match dns_override_parsed.as_ref() {
-        Some(ips) => ips
-            .iter()
-            .map(|i| i.to_string())
-            .collect::<Vec<_>>()
-            .join(", "),
-        None => server
-            .dns_servers_ips()
-            .iter()
-            .map(|i| i.to_string())
-            .collect::<Vec<_>>()
-            .join(", "),
-    };
     let endpoint_str = format!("{}:{}", server.endpoint_host, server.endpoint_port);
     let address_str = format!("{}/32", ip);
     let allowed_ips = DEFAULT_ALLOWED_IPS.to_string();
@@ -546,7 +478,6 @@ pub async fn create(
     let cfg = config::PeerConfig {
         private_key: &private_key,
         address: &address_str,
-        dns: &dns_str,
         mtu: Some(server.mtu as u16),
         server_public_key: &server.public_key,
         preshared_key: None,
@@ -726,26 +657,12 @@ pub async fn rotate_keys(
     // Render the new wg-conf using whatever the device's stored overrides
     // already say. No mock fields — the user gets exactly what their
     // current settings dictate, just with a fresh private key.
-    let dns_str = match device.dns_override_ips() {
-        Some(ips) if !ips.is_empty() => ips
-            .iter()
-            .map(|i| i.to_string())
-            .collect::<Vec<_>>()
-            .join(", "),
-        _ => server
-            .dns_servers_ips()
-            .iter()
-            .map(|i| i.to_string())
-            .collect::<Vec<_>>()
-            .join(", "),
-    };
     let endpoint_str = format!("{}:{}", server.endpoint_host, server.endpoint_port);
     let address_str = format!("{}/32", device.allocated_ip.ip());
     let allowed_ips = DEFAULT_ALLOWED_IPS.to_string();
     let cfg = config::PeerConfig {
         private_key: &private_key,
         address: &address_str,
-        dns: &dns_str,
         mtu: Some(server.mtu as u16),
         server_public_key: &server.public_key,
         preshared_key: None,
@@ -850,7 +767,6 @@ pub struct PatchBody {
     pub name: Option<String>,
     pub os: Option<DeviceOs>,
     pub device_type: Option<DeviceType>,
-    pub dns_override: Option<Vec<String>>,
 }
 
 /// Re-render the device's .conf from the server-stored private key.
@@ -905,26 +821,12 @@ pub async fn redownload_conf(
     // Same conf-render path as `create` + `rotate_keys`. Pulls overrides
     // from the device row so the re-download reflects the user's current
     // configuration, not the one captured at create time.
-    let dns_str = match device.dns_override_ips() {
-        Some(ips) if !ips.is_empty() => ips
-            .iter()
-            .map(|i| i.to_string())
-            .collect::<Vec<_>>()
-            .join(", "),
-        _ => server
-            .dns_servers_ips()
-            .iter()
-            .map(|i| i.to_string())
-            .collect::<Vec<_>>()
-            .join(", "),
-    };
     let endpoint_str = format!("{}:{}", server.endpoint_host, server.endpoint_port);
     let address_str = format!("{}/32", device.allocated_ip.ip());
     let allowed_ips = DEFAULT_ALLOWED_IPS.to_string();
     let cfg = config::PeerConfig {
         private_key: &private_key,
         address: &address_str,
-        dns: &dns_str,
         mtu: Some(server.mtu as u16),
         server_public_key: &server.public_key,
         preshared_key: None,
@@ -996,7 +898,6 @@ pub struct WgProfile {
     /// Interface address in CIDR form.
     #[schema(example = "10.10.0.5/32")]
     pub address: String,
-    pub dns: Vec<String>,
     pub server_public_key: String,
     /// Server `host:port` to dial.
     #[schema(example = "vpn.example.com:51820")]
@@ -1054,7 +955,6 @@ fn default_device_name(os: DeviceOs, dt: DeviceType) -> String {
 struct ProfileParams<'a> {
     private_key: &'a str,
     address: &'a str,
-    dns: &'a [String],
     server_public_key: &'a str,
     endpoint: &'a str,
     allowed_ips: &'a [String],
@@ -1069,7 +969,6 @@ fn render_profile(
     ProfileParams {
         private_key,
         address,
-        dns,
         server_public_key,
         endpoint,
         allowed_ips,
@@ -1077,12 +976,10 @@ fn render_profile(
         keepalive,
     }: ProfileParams<'_>,
 ) -> ApiResult<(WgProfile, String, String)> {
-    let dns_joined = dns.join(", ");
     let allowed_joined = allowed_ips.join(", ");
     let cfg = config::PeerConfig {
         private_key,
         address,
-        dns: &dns_joined,
         mtu: Some(mtu),
         server_public_key,
         preshared_key: None,
@@ -1098,7 +995,6 @@ fn render_profile(
     let profile = WgProfile {
         private_key: private_key.to_string(),
         address: address.to_string(),
-        dns: dns.to_vec(),
         server_public_key: server_public_key.to_string(),
         endpoint: endpoint.to_string(),
         allowed_ips: allowed_ips.to_vec(),
@@ -1162,21 +1058,12 @@ pub async fn connect(
 
         let ip = device.allocated_ip.ip();
         let address = format!("{}/32", ip);
-        let dns: Vec<String> = match device.dns_override_ips() {
-            Some(ips) if !ips.is_empty() => ips.iter().map(|i| i.to_string()).collect(),
-            _ => server
-                .dns_servers_ips()
-                .iter()
-                .map(|i| i.to_string())
-                .collect(),
-        };
         let allowed_ips = default_allowed_ips();
         let endpoint = format!("{}:{}", server.endpoint_host, server.endpoint_port);
         let keepalive = server.persistent_keepalive as u16;
         let (profile, config, qr_svg) = render_profile(ProfileParams {
             private_key: &private_key,
             address: &address,
-            dns: &dns,
             server_public_key: &server.public_key,
             endpoint: &endpoint,
             allowed_ips: &allowed_ips,
@@ -1319,18 +1206,12 @@ pub async fn connect(
     .await?;
 
     let address = format!("{}/32", ip);
-    let dns: Vec<String> = server
-        .dns_servers_ips()
-        .iter()
-        .map(|i| i.to_string())
-        .collect();
     let allowed_ips = default_allowed_ips();
     let endpoint = format!("{}:{}", server.endpoint_host, server.endpoint_port);
     let keepalive = server.persistent_keepalive as u16;
     let (profile, config, qr_svg) = render_profile(ProfileParams {
         private_key: &private_key,
         address: &address,
-        dns: &dns,
         server_public_key: &server.public_key,
         endpoint: &endpoint,
         allowed_ips: &allowed_ips,
@@ -1392,35 +1273,17 @@ pub async fn patch(
         && (name.trim().is_empty() || name.len() > 64) {
             return Err(ApiError::Validation("name must be 1–64 chars".into()));
         }
-    let dns_override_inet: Option<Vec<IpNetwork>> = if let Some(ref dns) = body.dns_override {
-        let mut out = Vec::with_capacity(dns.len());
-        for s in dns {
-            let ip: std::net::IpAddr = s
-                .parse()
-                .map_err(|_| ApiError::Validation(format!("invalid IP: {s}")))?;
-            out.push(
-                IpNetwork::new(ip, if ip.is_ipv4() { 32 } else { 128 })
-                    .expect("valid host prefix"),
-            );
-        }
-        Some(out)
-    } else {
-        None
-    };
-
     sqlx::query(
         r#"UPDATE devices
               SET name = COALESCE($3, name),
                   os = COALESCE($4, os),
-                  device_type = COALESCE($6, device_type),
-                  dns_override = $5
+                  device_type = COALESCE($5, device_type)
             WHERE user_id = $1 AND id = $2"#,
     )
     .bind(user.id)
     .bind(id)
     .bind(body.name.as_deref())
     .bind(body.os)
-    .bind(dns_override_inet.as_deref())
     .bind(body.device_type)
     .execute(&state.pool)
     .await?;
@@ -1435,7 +1298,6 @@ pub async fn patch(
             metadata: json!({
                 "name_changed": body.name.is_some(),
                 "os_changed": body.os.is_some(),
-                "dns_changed": body.dns_override.is_some(),
             }),
             ip: None,
         },

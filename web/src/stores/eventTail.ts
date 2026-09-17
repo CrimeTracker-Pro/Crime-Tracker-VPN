@@ -32,7 +32,7 @@ function toLine(event: Event): TailLine | null {
       // in the tail — at 1 Hz × N peers it floods the log with redundant
       // information that already lives on the chart. The per-server
       // `server_sample` (one row/sec total) is the right granularity
-      // for the tail. Status changes / handshakes / DNS still pass
+      // for the tail. Status changes / handshakes still pass
       // through below.
       return null
     case "peer_status_changed":
@@ -52,15 +52,6 @@ function toLine(event: Event): TailLine | null {
         tone: "info",
         deviceId: event.device_id,
         text: `device.handshake · ${event.device_id.slice(0, 8)} · ${formatTime(event.last_handshake_ms)}`,
-      }
-    case "dns_updated":
-      return {
-        id: nextId++,
-        tsMs: Date.now(),
-        kind: event.type,
-        tone: "info",
-        deviceId: event.device_id,
-        text: `dns.updated · ${event.device_id.slice(0, 8)} · ${event.dns_names.join(", ") || "(cleared)"}`,
       }
     case "server_health":
       return {

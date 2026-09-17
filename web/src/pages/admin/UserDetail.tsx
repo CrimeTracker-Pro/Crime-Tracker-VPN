@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   IconChevronDown,
   IconDeviceDesktop,
-  IconKey,
   IconLogout,
   IconMail,
   IconPlayerPause,
@@ -68,7 +67,6 @@ import {
   adminRevokeDevice,
   adminRevokeUserSessions,
   adminUnpauseDevice,
-  adminSendPasswordReset,
   adminSetDeviceQuota,
   adminSetUserDeviceLimit,
   adminSetUserEmail,
@@ -110,7 +108,6 @@ export function UserDetailPage() {
   const [impersonateOpen, setImpersonateOpen] = useState(false)
   const [quotaOpen, setQuotaOpen] = useState(false)
   const [deviceLimitOpen, setDeviceLimitOpen] = useState(false)
-  const [resetOpen, setResetOpen] = useState(false)
   const [disable2faOpen, setDisable2faOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [roleOpen, setRoleOpen] = useState(false)
@@ -193,7 +190,7 @@ export function UserDetailPage() {
     onSuccess: () => {
       invalidateUser()
       setRevokeDevice(null)
-      toast.success("Device revoked — IP released, peer and DNS removed")
+      toast.success("Device revoked — IP released and peer removed")
     },
     onError: (e: unknown) => {
       if (e instanceof ApiError) toast.error(e.message)
@@ -218,17 +215,6 @@ export function UserDetailPage() {
       invalidateUser()
       setRoleOpen(false)
       toast.success(`Role set to ${role}`)
-    },
-    onError: (e: unknown) => {
-      if (e instanceof ApiError) toast.error(e.message)
-    },
-  })
-
-  const sendResetM = useMutation({
-    mutationFn: () => adminSendPasswordReset(id),
-    onSuccess: () => {
-      setResetOpen(false)
-      toast.success("Password-reset link sent")
     },
     onError: (e: unknown) => {
       if (e instanceof ApiError) toast.error(e.message)
@@ -395,11 +381,6 @@ export function UserDetailPage() {
                       Edit email
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    <DropdownMenuLabel>Recovery</DropdownMenuLabel>
-                    <DropdownMenuItem onSelect={() => setResetOpen(true)}>
-                      <IconKey />
-                      Send password-reset email
-                    </DropdownMenuItem>
                     <DropdownMenuItem
                       onSelect={() => setDisable2faOpen(true)}
                       disabled={!u.totp_enabled}
@@ -790,7 +771,7 @@ export function UserDetailPage() {
           if (!o) setRevokeDevice(null)
         }}
         title={`Revoke ${revokeDevice?.name ?? "device"}?`}
-        description="Permanently revokes the device: the WG peer is removed, its IP is released for reallocation, and its DNS names stop resolving. The user keeps their account and other devices."
+        description="Permanently revokes the device: the WG peer is removed and its IP is released for reallocation. The user keeps their account and other devices."
         confirmLabel="Revoke device"
         destructive
         pending={deviceRevokeM.isPending}
@@ -817,16 +798,6 @@ export function UserDetailPage() {
         confirmLabel="Impersonate"
         pending={impersonateM.isPending}
         onConfirm={() => impersonateM.mutate()}
-      />
-
-      <ConfirmDialog
-        open={resetOpen}
-        onOpenChange={setResetOpen}
-        title={`Email a password-reset link to ${u?.email ?? "user"}?`}
-        description="Sends the same reset email the user would get from the public 'Forgot password' flow. Existing reset links for this user are invalidated."
-        confirmLabel="Send link"
-        pending={sendResetM.isPending}
-        onConfirm={() => sendResetM.mutate()}
       />
 
       <ConfirmDialog

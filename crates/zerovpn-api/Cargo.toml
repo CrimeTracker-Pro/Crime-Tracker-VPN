@@ -17,7 +17,6 @@ zerovpn-wire = { workspace = true }
 zerovpn-auth = { workspace = true }
 zerovpn-mail = { workspace = true }
 zerovpn-wg = { workspace = true }
-zerovpn-dns = { workspace = true }
 
 axum = { workspace = true }
 tower = { workspace = true }
