@@ -1277,6 +1277,7 @@ export interface AdminServerRow {
   /** WireGuard PersistentKeepalive (seconds) handed to peers on this server.
    *  `0` disables keepalive. */
   persistent_keepalive: number
+  default_allowed_ips: string[]
   /** Cumulative lifetime RX/TX across this server's devices (accurate
    *  device-lifetime sum). Powers the server-live card's RX/TX totals. */
   rx_total: number
@@ -1293,6 +1294,7 @@ export const adminPatchServer = (
     endpoint_port?: number
     mtu?: number
     persistent_keepalive?: number
+    default_allowed_ips?: string[]
   }
 ) =>
   apiFetch<{ status: string }>(`/admin/servers/${id}`, {

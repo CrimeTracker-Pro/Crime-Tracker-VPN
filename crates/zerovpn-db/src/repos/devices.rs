@@ -144,6 +144,7 @@ pub struct NewDevice<'a> {
     pub public_key: &'a str,
     pub preshared_key_encrypted: Option<&'a [u8]>,
     pub allocated_ip: IpNetwork,
+    pub allowed_ips_override: Option<&'a [String]>,
     /// KEK-encrypted WG private key. None for default zero-knowledge
     /// devices; Some(...) when the user opted in at create time.
     pub private_key_encrypted: Option<&'a [u8]>,
@@ -153,9 +154,9 @@ pub async fn create(pool: &PgPool, d: NewDevice<'_>) -> sqlx::Result<Uuid> {
     let id = Uuid::now_v7();
     sqlx::query(
         r#"INSERT INTO devices (id, user_id, server_id, name, os, device_type, public_key,
-                                preshared_key_encrypted, allocated_ip,
+                                preshared_key_encrypted, allocated_ip, allowed_ips_override,
                                 private_key_encrypted)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"#,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"#,
     )
     .bind(id)
     .bind(d.user_id)
@@ -166,6 +167,7 @@ pub async fn create(pool: &PgPool, d: NewDevice<'_>) -> sqlx::Result<Uuid> {
     .bind(d.public_key)
     .bind(d.preshared_key_encrypted)
     .bind(d.allocated_ip)
+    .bind(d.allowed_ips_override)
     .bind(d.private_key_encrypted)
     .execute(pool)
     .await?;

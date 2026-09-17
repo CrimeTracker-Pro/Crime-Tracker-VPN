@@ -7,7 +7,7 @@ use crate::PgPool;
 pub async fn list_active(pool: &PgPool) -> sqlx::Result<Vec<Server>> {
     sqlx::query_as::<_, Server>(
         r#"SELECT id, name, region, endpoint_host, endpoint_port, public_key,
-                  cidr, mtu, is_active, persistent_keepalive
+                  cidr, mtu, is_active, persistent_keepalive, default_allowed_ips
            FROM servers
            WHERE is_active = TRUE
            ORDER BY name"#,
@@ -19,7 +19,7 @@ pub async fn list_active(pool: &PgPool) -> sqlx::Result<Vec<Server>> {
 pub async fn find_by_id(pool: &PgPool, id: Uuid) -> sqlx::Result<Option<Server>> {
     sqlx::query_as::<_, Server>(
         r#"SELECT id, name, region, endpoint_host, endpoint_port, public_key,
-                  cidr, mtu, is_active, persistent_keepalive
+                  cidr, mtu, is_active, persistent_keepalive, default_allowed_ips
            FROM servers
            WHERE id = $1"#,
     )

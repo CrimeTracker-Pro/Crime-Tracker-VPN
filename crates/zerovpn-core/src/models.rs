@@ -111,6 +111,8 @@ pub struct Server {
     /// this server — written into the client `.conf` and used by live
     /// `wg set peer` calls. `0` disables keepalive (WG default semantics).
     pub persistent_keepalive: i16,
+    /// Extra split-tunnel routes inherited by newly provisioned devices.
+    pub default_allowed_ips: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow, ToSchema)]

@@ -1840,6 +1840,7 @@ pub struct AdminServer {
     /// WireGuard PersistentKeepalive (seconds) for peers on this server.
     /// `0` disables keepalive.
     pub persistent_keepalive: i32,
+    pub default_allowed_ips: Vec<String>,
     /// Cumulative lifetime RX/TX across this server's (non-revoked) devices —
     /// the accurate per-device lifetime sum (not the drift-prone aggregates).
     /// Merged in by `list_servers`; `0` on responses that don't compute it.
@@ -1860,6 +1861,7 @@ impl From<Server> for AdminServer {
             mtu: s.mtu,
             is_active: s.is_active,
             persistent_keepalive: s.persistent_keepalive as i32,
+            default_allowed_ips: s.default_allowed_ips,
             // Totals are merged in by handlers that compute them (list_servers).
             rx_total: 0,
             tx_total: 0,
@@ -1912,6 +1914,7 @@ pub struct PatchServerBody {
     /// WireGuard `PersistentKeepalive` (seconds). `0` disables. Bounded to
     /// match the DB CHECK constraint (`0..=3600`).
     pub persistent_keepalive: Option<i32>,
+    pub default_allowed_ips: Option<Vec<String>>,
 }
 
 #[utoipa::path(
@@ -1949,12 +1952,23 @@ pub async fn patch_server(
                 "persistent_keepalive must be 0..=3600 (0 disables)".into(),
             ));
         }
+    if let Some(routes) = &body.default_allowed_ips
+        && (routes.len() > 32
+            || routes.iter().any(|route| {
+                route.trim().is_empty() || route.trim().parse::<IpNetwork>().is_err()
+            }))
+    {
+        return Err(ApiError::Validation(
+            "default_allowed_ips must contain at most 32 valid CIDR routes".into(),
+        ));
+    }
     sqlx::query(
         r#"UPDATE servers
            SET endpoint_host        = COALESCE($2, endpoint_host),
                endpoint_port        = COALESCE($3, endpoint_port),
                mtu                  = COALESCE($4, mtu),
-               persistent_keepalive = COALESCE($5, persistent_keepalive)
+               persistent_keepalive = COALESCE($5, persistent_keepalive),
+               default_allowed_ips  = COALESCE($6, default_allowed_ips)
            WHERE id = $1"#,
     )
     .bind(id)
@@ -1962,6 +1976,7 @@ pub async fn patch_server(
     .bind(body.endpoint_port)
     .bind(body.mtu)
     .bind(body.persistent_keepalive.map(|v| v as i16))
+    .bind(&body.default_allowed_ips)
     .execute(&state.pool)
     .await?;
     audit::record(
@@ -1976,6 +1991,7 @@ pub async fn patch_server(
                 "endpoint_port": body.endpoint_port,
                 "mtu": body.mtu,
                 "persistent_keepalive": body.persistent_keepalive,
+                "default_allowed_ips": body.default_allowed_ips,
             }),
             ip: None,
         },

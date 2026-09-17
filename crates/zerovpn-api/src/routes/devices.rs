@@ -404,6 +404,7 @@ pub async fn create(
     // Best-effort: persist the device row. If it fails we must release the IP.
     let host_prefix = if ip.is_ipv4() { 32 } else { 128 };
     let allocated_cidr = IpNetwork::new(ip, host_prefix).expect("valid host prefix");
+    let allowed_ips = default_allowed_ips(&server);
     let device_id = match devices::create(
         &state.pool,
         devices::NewDevice {
@@ -415,6 +416,7 @@ pub async fn create(
             public_key: &public_key,
             preshared_key_encrypted: None, // will encrypt with KEK in a follow-up
             allocated_ip: allocated_cidr,
+            allowed_ips_override: Some(&allowed_ips),
             private_key_encrypted: Some(&private_key_encrypted),
         },
     )
@@ -471,7 +473,6 @@ pub async fn create(
     // never persisted.
     let endpoint_str = format!("{}:{}", server.endpoint_host, server.endpoint_port);
     let address_str = format!("{}/32", ip);
-    let allowed_ips = server.cidr.to_string();
 
     let keepalive = server.persistent_keepalive as u16;
     let cfg = config::PeerConfig {
@@ -480,7 +481,7 @@ pub async fn create(
         mtu: Some(server.mtu as u16),
         server_public_key: &server.public_key,
         preshared_key: None,
-        allowed_ips: &allowed_ips,
+        allowed_ips: &allowed_ips.join(", "),
         endpoint: &endpoint_str,
         keepalive,
     };
@@ -658,7 +659,7 @@ pub async fn rotate_keys(
     // current settings dictate, just with a fresh private key.
     let endpoint_str = format!("{}:{}", server.endpoint_host, server.endpoint_port);
     let address_str = format!("{}/32", device.allocated_ip.ip());
-    let allowed_ips = server.cidr.to_string();
+    let allowed_ips = allowed_ips_for_device(&device, &server).join(", ");
     let cfg = config::PeerConfig {
         private_key: &private_key,
         address: &address_str,
@@ -822,7 +823,7 @@ pub async fn redownload_conf(
     // configuration, not the one captured at create time.
     let endpoint_str = format!("{}:{}", server.endpoint_host, server.endpoint_port);
     let address_str = format!("{}/32", device.allocated_ip.ip());
-    let allowed_ips = server.cidr.to_string();
+    let allowed_ips = allowed_ips_for_device(&device, &server).join(", ");
     let cfg = config::PeerConfig {
         private_key: &private_key,
         address: &address_str,
@@ -1004,8 +1005,23 @@ fn render_profile(
 }
 
 /// Split-tunnel AllowedIPs (the VPN subnet) for an app-provisioned device.
-fn default_allowed_ips(server_cidr: impl ToString) -> Vec<String> {
-    vec![server_cidr.to_string()]
+fn default_allowed_ips(server: &zerovpn_core::models::Server) -> Vec<String> {
+    let mut routes = vec![server.cidr.to_string()];
+    for route in &server.default_allowed_ips {
+        let route = route.trim();
+        if !route.is_empty() && !routes.iter().any(|existing| existing == route) {
+            routes.push(route.to_owned());
+        }
+    }
+    routes
+}
+
+fn allowed_ips_for_device(device: &Device, server: &zerovpn_core::models::Server) -> Vec<String> {
+    device
+        .allowed_ips_override
+        .clone()
+        .filter(|routes| !routes.is_empty())
+        .unwrap_or_else(|| default_allowed_ips(server))
 }
 
 #[utoipa::path(
@@ -1056,7 +1072,7 @@ pub async fn connect(
 
         let ip = device.allocated_ip.ip();
         let address = format!("{}/32", ip);
-        let allowed_ips = default_allowed_ips(server.cidr);
+        let allowed_ips = allowed_ips_for_device(&device, &server);
         let endpoint = format!("{}:{}", server.endpoint_host, server.endpoint_port);
         let keepalive = server.persistent_keepalive as u16;
         let (profile, config, qr_svg) = render_profile(ProfileParams {
@@ -1167,6 +1183,7 @@ pub async fn connect(
 
     let host_prefix = if ip.is_ipv4() { 32 } else { 128 };
     let allocated_cidr = IpNetwork::new(ip, host_prefix).expect("valid host prefix");
+    let allowed_ips = default_allowed_ips(&server);
     let device_id = match devices::create(
         &state.pool,
         devices::NewDevice {
@@ -1178,6 +1195,7 @@ pub async fn connect(
             public_key: &public_key,
             preshared_key_encrypted: None,
             allocated_ip: allocated_cidr,
+            allowed_ips_override: Some(&allowed_ips),
             private_key_encrypted: Some(&private_key_encrypted),
         },
     )
@@ -1204,7 +1222,6 @@ pub async fn connect(
     .await?;
 
     let address = format!("{}/32", ip);
-    let allowed_ips = default_allowed_ips(server.cidr);
     let endpoint = format!("{}:{}", server.endpoint_host, server.endpoint_port);
     let keepalive = server.persistent_keepalive as u16;
     let (profile, config, qr_svg) = render_profile(ProfileParams {
