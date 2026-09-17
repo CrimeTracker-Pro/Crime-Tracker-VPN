@@ -182,6 +182,8 @@ export interface PendingInvitation {
 export const adminListInvitations = () => apiFetch<PendingInvitation[]>("/admin/invitations")
 export const adminResendInvitation = (id: string) =>
   apiFetch<{ status: string }>(`/admin/invitations/${id}/resend`, { method: "POST" })
+export const adminCreateInvitationLink = (id: string) =>
+  apiFetch<{ status: string; link: string }>(`/admin/invitations/${id}/link`, { method: "POST" })
 export const adminRevokeInvitation = (id: string) =>
   apiFetch<{ status: string }>(`/admin/invitations/${id}/revoke`, { method: "POST" })
 

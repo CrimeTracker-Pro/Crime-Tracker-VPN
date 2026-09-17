@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   IconDotsVertical,
+  IconCopy,
   IconEye,
   IconLogin2,
   IconLogout,
@@ -65,6 +66,7 @@ import {
   type UserStatus,
   adminCreateUser,
   adminListInvitations,
+  adminCreateInvitationLink,
   adminResendInvitation,
   adminRevokeInvitation,
   adminDeleteUser,
@@ -148,6 +150,15 @@ export function UsersPage() {
   const resendInviteM = useMutation({
     mutationFn: adminResendInvitation,
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ["admin", "invitations"] }); toast.success("Invitation resent") },
+    onError: (e: unknown) => { if (e instanceof ApiError) toast.error(e.message) },
+  })
+  const copyInviteLinkM = useMutation({
+    mutationFn: adminCreateInvitationLink,
+    onSuccess: async (data) => {
+      await navigator.clipboard.writeText(data.link)
+      void qc.invalidateQueries({ queryKey: ["admin", "invitations"] })
+      toast.success("Fresh invitation link copied")
+    },
     onError: (e: unknown) => { if (e instanceof ApiError) toast.error(e.message) },
   })
   const revokeInviteM = useMutation({
@@ -340,6 +351,7 @@ export function UsersPage() {
               <div><span>{invite.email}</span><span className="ml-2 text-muted-foreground">{new Date(invite.expires_at) < new Date() ? "Expired" : invite.verified_at ? "Email verified — awaiting Google sign-in" : "Awaiting email verification"}</span></div>
               <div className="flex gap-2">
                 <Button size="sm" variant="outline" disabled={resendInviteM.isPending} onClick={() => resendInviteM.mutate(invite.user_id)}>Resend</Button>
+                <Button size="sm" variant="outline" disabled={copyInviteLinkM.isPending} onClick={() => copyInviteLinkM.mutate(invite.user_id)}><IconCopy className="size-3.5" />Copy link</Button>
                 <Button size="sm" variant="outline" disabled={revokeInviteM.isPending} onClick={() => revokeInviteM.mutate(invite.user_id)}>Revoke</Button>
               </div>
             </div>

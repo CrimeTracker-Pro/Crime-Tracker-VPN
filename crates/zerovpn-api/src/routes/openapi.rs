@@ -37,6 +37,7 @@ use super::{admin, auth, bandwidth, connections, devices, dto, health, invitatio
         invitations::verify,
         invitations::list,
         invitations::resend,
+        invitations::create_link,
         invitations::revoke,
         me::list_sessions,
         me::revoke_session,

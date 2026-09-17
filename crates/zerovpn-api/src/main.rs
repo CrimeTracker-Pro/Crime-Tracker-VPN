@@ -495,6 +495,7 @@ async fn main() -> Result<()> {
                 .route("/auth/invitations/verify", post(routes::invitations::verify))
                 .route("/admin/invitations", get(routes::invitations::list))
                 .route("/admin/invitations/{id}/resend", post(routes::invitations::resend))
+                .route("/admin/invitations/{id}/link", post(routes::invitations::create_link))
                 .route("/admin/invitations/{id}/revoke", post(routes::invitations::revoke))
                 .route("/ws", get(routes::ws::ws)),
         )

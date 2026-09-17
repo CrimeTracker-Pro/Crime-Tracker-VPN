@@ -29,6 +29,14 @@ pub struct InvitationAck {
     pub status: &'static str,
 }
 
+/// Returned only to an authenticated administrator as a delivery fallback.
+/// The plaintext token is never stored in the database.
+#[derive(Serialize, ToSchema)]
+pub struct InvitationLinkAck {
+    pub status: &'static str,
+    pub link: String,
+}
+
 #[derive(Deserialize, ToSchema)]
 pub struct VerifyBody {
     pub token: String,
@@ -182,6 +190,43 @@ pub async fn resend(
     )
     .await?;
     Ok(Json(InvitationAck { status: "ok" }))
+}
+
+/// Generate a fresh link for a pending invitation without relying on SMTP.
+/// This intentionally invalidates the previous link and returns the new one
+/// once, so an administrator can deliver it through an alternate channel.
+#[utoipa::path(post, path="/admin/invitations/{id}/link", tag="Admin", params(("id"=Uuid, Path)), responses((status=200, body=InvitationLinkAck)), security(("session_cookie"=[])))]
+pub async fn create_link(
+    State(state): State<AppState>,
+    RequireAdmin(admin): RequireAdmin,
+    Path(id): Path<Uuid>,
+) -> ApiResult<impl IntoResponse> {
+    let user = users::find_by_id(&state.pool, id).await?.ok_or(ApiError::NotFound)?;
+    if user.status != zerovpn_core::models::UserStatus::PendingVerification {
+        return Err(ApiError::Validation("invitation is no longer pending".into()));
+    }
+    let (token, hash) = fresh_token();
+    let expires_at = OffsetDateTime::now_utc() + INVITE_TTL;
+    let updated = sqlx::query(
+        "UPDATE invitations SET invited_by = $2, token_hash = $3, expires_at = $4, \
+         verified_at = NULL, accepted_at = NULL, revoked_at = NULL \
+         WHERE user_id = $1 AND accepted_at IS NULL AND revoked_at IS NULL",
+    )
+    .bind(id)
+    .bind(admin.id)
+    .bind(hash)
+    .bind(expires_at)
+    .execute(&state.pool)
+    .await?;
+    if updated.rows_affected() != 1 { return Err(ApiError::NotFound); }
+    audit::record(&state.pool, audit::AuditEntry {
+        actor_user_id: Some(admin.id), action: "admin.invitation_link_created",
+        target_type: Some("user"), target_id: Some(id), metadata: json!({}), ip: None,
+    }).await?;
+    Ok(Json(InvitationLinkAck {
+        status: "ok",
+        link: format!("{}/invite?token={token}", state.public_url.trim_end_matches('/')),
+    }))
 }
 
 #[utoipa::path(post, path="/admin/invitations/{id}/revoke", tag="Admin", params(("id"=Uuid, Path)), responses((status=200, body=InvitationAck)), security(("session_cookie"=[])))]
