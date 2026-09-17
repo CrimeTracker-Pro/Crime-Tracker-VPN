@@ -10,10 +10,7 @@
 use axum::{Json, response::IntoResponse};
 use utoipa::{Modify, OpenApi, openapi::security::{SecurityScheme, ApiKey, ApiKeyValue}};
 
-use super::{
-    admin, auth, bandwidth, connections, devices, dns, dto, email_auth, health, me, oauth,
-    totp, ws,
-};
+use super::{admin, auth, bandwidth, connections, devices, dto, email_auth, health, me, oauth, totp, ws};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -31,8 +28,6 @@ use super::{
         health::ping,
 
         // Auth
-        auth::register,
-        auth::login,
         auth::logout,
         auth::me,
         totp::setup,
@@ -40,12 +35,8 @@ use super::{
         totp::disable,
         totp::regenerate_recovery_codes,
         email_auth::verify_email,
-        email_auth::resend_verify,
         me::list_sessions,
         me::revoke_session,
-        email_auth::forgot_password,
-        email_auth::reset_password,
-        email_auth::verify_reset_token,
         oauth::google_start,
         oauth::google_callback,
 
@@ -56,7 +47,6 @@ use super::{
         me::set_topology,
         me::get_preferences,
         me::set_preferences,
-        me::change_password,
         me::delete_account,
         me::usage,
         me::activity,
