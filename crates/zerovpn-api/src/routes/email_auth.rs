@@ -11,17 +11,15 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use tower_sessions::Session;
 use tracing::{info, warn};
 use utoipa::ToSchema;
-use zerovpn_core::models::{UserRole, UserStatus};
+use zerovpn_core::models::UserStatus;
 use zerovpn_db::repos::{audit, session_events, users, verification_tokens};
 use zerovpn_db::repos::verification_tokens::TokenPurpose;
 use zerovpn_mail::templates::{PasswordReset, VerifyEmail};
 
 use crate::{
     error::{ApiError, ApiResult},
-    extractors::auth::{SESSION_KEY_PW_CHANGED_AT, SESSION_KEY_USER_ID},
     state::AppState,
 };
 
@@ -152,30 +150,10 @@ pub async fn issue_password_reset(
 }
 
 #[derive(Debug, Serialize, ToSchema)]
-pub struct VerifiedUser {
-    pub id: uuid::Uuid,
-    pub email: String,
-    pub role: UserRole,
-    /// True when the user has finished TOTP enrollment. Always false
-    /// for the verify-email flow in practice (a freshly-verified
-    /// account hasn't enrolled yet), but kept in the shape so the
-    /// frontend's `PublicUser` type stays uniform across endpoints.
-    pub totp_enabled: bool,
-    /// Same admin-set policy snapshot returned by /me — included so the
-    /// post-verify auth-store hydrate doesn't have to make a second call.
-    pub user_policy: crate::routes::auth::UserPolicySnapshot,
-}
-
 #[derive(Debug, Serialize, ToSchema)]
 pub struct VerifyEmailResponse {
     #[schema(example = "ok")]
     pub status: &'static str,
-    /// Present on first successful verify: the verify endpoint upgrades
-    /// the caller's anonymous session into an authenticated one so the
-    /// frontend can navigate straight to /app without an extra sign-in
-    /// hop. The verify token is single-use + 24 h TTL so the surface for
-    /// a leaked link is bounded.
-    pub user: VerifiedUser,
 }
 
 #[utoipa::path(
@@ -190,7 +168,6 @@ pub struct VerifyEmailResponse {
 )]
 pub async fn verify_email(
     State(state): State<AppState>,
-    session: Session,
     Json(body): Json<VerifyBody>,
 ) -> ApiResult<impl IntoResponse> {
     body.validate().map_err(|e| ApiError::Validation(e.to_string()))?;
@@ -224,38 +201,10 @@ pub async fn verify_email(
     )
     .await?;
 
-    // Fetch the activated row so we can both populate the session
-    // snapshot and hand the user payload back for the frontend's auth
-    // store. If the row vanished between the UPDATE and the SELECT
-    // (deleted/suspended concurrently), bail without a session.
-    let user = users::find_by_id(&state.pool, token.user_id)
-        .await?
-        .ok_or_else(|| ApiError::Internal("verified user vanished".into()))?;
-    session
-        .insert(SESSION_KEY_USER_ID, user.id)
-        .await
-        .map_err(|e| ApiError::Internal(e.to_string()))?;
-    session
-        .insert(
-            SESSION_KEY_PW_CHANGED_AT,
-            user.password_changed_at.unix_timestamp(),
-        )
-        .await
-        .map_err(|e| ApiError::Internal(e.to_string()))?;
-    users::touch_last_login(&state.pool, user.id).await?;
-
-    info!(user_id = %user.id, "email verified, session established");
-    let user_policy = crate::routes::auth::load_user_policy(&state.pool).await;
-    Ok(Json(VerifyEmailResponse {
-        status: "ok",
-        user: VerifiedUser {
-            id: user.id,
-            email: user.email,
-            role: user.role,
-            totp_enabled: user.totp_enabled,
-            user_policy,
-        },
-    }))
+    // Verification proves control of the invitation mailbox; identity and
+    // session establishment are deliberately deferred to Google OAuth.
+    info!(user_id = %token.user_id, "invitation email verified; awaiting Google sign-in");
+    Ok(Json(VerifyEmailResponse { status: "ok" }))
 }
 
 #[utoipa::path(

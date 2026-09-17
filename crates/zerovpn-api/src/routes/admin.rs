@@ -945,31 +945,13 @@ pub async fn delete_user(
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateUserBody {
     pub email: String,
-    /// Optional initial password. When omitted, a random 24-char password
-    /// is generated server-side and the response carries it back exactly
-    /// once so the admin can deliver it out-of-band; the user is then
-    /// flagged `must_change_password` so they're forced to rotate on
-    /// first sign-in.
-    #[serde(default)]
-    pub password: Option<String>,
     /// Default `user`. Set to `admin` to create another administrator.
     #[serde(default = "default_role")]
     pub role: UserRole,
-    /// When true, skip the email-verification gate so the user can sign
-    /// in immediately. Defaults to false (we mint a verify-email link).
-    #[serde(default)]
-    pub skip_verification: bool,
-    /// When true (default), email a password-reset link instead of
-    /// returning the generated password. Ignored when `password` is set.
-    #[serde(default = "default_true")]
-    pub email_setup_link: bool,
 }
 
 fn default_role() -> UserRole {
     UserRole::User
-}
-fn default_true() -> bool {
-    true
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -978,10 +960,6 @@ pub struct CreatedUserResponse {
     pub email: String,
     pub role: UserRole,
     pub status: UserStatus,
-    /// Plaintext password — only present when the admin asked us to
-    /// generate one AND chose not to email a setup link. Never logged.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub generated_password: Option<String>,
 }
 
 #[utoipa::path(
@@ -1005,71 +983,23 @@ pub async fn create_user(
     if !email.contains('@') {
         return Err(ApiError::Validation("email is required and must contain @".into()));
     }
-    if let Some(p) = body.password.as_deref()
-        && p.len() < 12 {
-            return Err(ApiError::Validation(
-                "password must be at least 12 characters".into(),
-            ));
-        }
     if users::find_by_email(&state.pool, &email).await?.is_some() {
         return Err(ApiError::Validation("email already in use".into()));
     }
 
-    let (password_plain, generated) = match body.password.as_deref() {
-        Some(p) => (p.to_string(), false),
-        None => (generate_random_password(24), true),
-    };
-    let password_hash = zerovpn_auth::password::hash(&password_plain)?;
-
-    let initial_status = if body.skip_verification {
-        UserStatus::Active
-    } else {
-        UserStatus::PendingVerification
-    };
+    // Password authentication is disabled. `!` is deliberately not a valid
+    // Argon2 hash; the invited user must verify their email then use Google.
     let id = users::create(
         &state.pool,
         &email,
-        &password_hash,
+        "!",
         body.role,
-        initial_status,
+        UserStatus::PendingVerification,
     )
     .await?;
-
-    // Force a rotation on first login when we generated the password.
-    if generated {
-        sqlx::query(
-            "UPDATE users SET must_change_password = TRUE WHERE id = $1",
-        )
-        .bind(id)
-        .execute(&state.pool)
-        .await?;
-    }
-
-    // Mark email as verified up-front when the admin chose to skip the
-    // verify gate — otherwise the dashboard's gating still trips.
-    if body.skip_verification {
-        sqlx::query(
-            "UPDATE users SET email_verified_at = NOW() WHERE id = $1",
-        )
-        .bind(id)
-        .execute(&state.pool)
-        .await?;
-    } else if let Err(e) = email_auth::issue_verify_email(&state, id, &email).await {
+    if let Err(e) = email_auth::issue_verify_email(&state, id, &email).await {
         warn!(?e, %id, "create_user: verify-email send failed");
     }
-
-    // If the admin generated a password and asked us to email a setup
-    // link, ship a password-reset email and don't return the plaintext.
-    let return_password = if generated && body.email_setup_link {
-        if let Err(e) = email_auth::issue_password_reset(&state, id, &email).await {
-            warn!(?e, %id, "create_user: setup-link send failed");
-        }
-        None
-    } else if generated {
-        Some(password_plain)
-    } else {
-        None
-    };
 
     audit::record(
         &state.pool,
@@ -1080,8 +1010,7 @@ pub async fn create_user(
             target_id: Some(id),
             metadata: json!({
                 "role": body.role,
-                "skip_verification": body.skip_verification,
-                "generated_password": generated,
+                "invite": true,
             }),
             ip: None,
         },
@@ -1094,8 +1023,7 @@ pub async fn create_user(
         id,
         email,
         role: body.role,
-        status: initial_status,
-        generated_password: return_password,
+        status: UserStatus::PendingVerification,
     }))
 }
 

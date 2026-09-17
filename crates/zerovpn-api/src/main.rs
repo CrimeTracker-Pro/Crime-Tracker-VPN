@@ -15,6 +15,8 @@ use tower_sessions_sqlx_store::PostgresStore;
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 use zerovpn_events::Subscriber;
+use zerovpn_core::models::{UserRole, UserStatus};
+use zerovpn_db::repos::users;
 use zerovpn_wire::Event;
 
 mod bootstrap;
@@ -79,6 +81,17 @@ async fn main() -> Result<()> {
     zerovpn_db::run_migrations(&pool)
         .await
         .context("run migrations")?;
+
+    // The initial administrator is explicitly configured and can only sign
+    // in through a Google account with this verified email. No password or
+    // public registration path exists.
+    if let Ok(email) = env::var("ZEROVPN_BOOTSTRAP_ADMIN_EMAIL") {
+        let email = email.trim().to_lowercase();
+        if !email.is_empty() && users::find_by_email(&pool, &email).await?.is_none() {
+            users::create(&pool, &email, "!", UserRole::Admin, UserStatus::Active).await?;
+            info!(email, "created bootstrap admin; awaiting first Google sign-in");
+        }
+    }
 
     // Tower-sessions session store + its own migration.
     let session_store = PostgresStore::new(pool.clone());
@@ -264,8 +277,6 @@ async fn main() -> Result<()> {
             "/api/v1",
             Router::new()
                 .route("/ping", get(routes::health::ping))
-                .route("/auth/register", post(routes::auth::register))
-                .route("/auth/login", post(routes::auth::login))
                 .route("/auth/logout", post(routes::auth::logout))
                 .route("/auth/google/start", get(routes::oauth::google_start))
                 .route("/auth/google/callback", post(routes::oauth::google_callback))
@@ -349,10 +360,6 @@ async fn main() -> Result<()> {
                     "/me/account",
                     axum::routing::delete(routes::me::delete_account),
                 )
-                .route(
-                    "/me/change-password",
-                    post(routes::me::change_password),
-                )
                 .route("/me/sessions", get(routes::me::list_sessions))
                 .route(
                     "/me/sessions/{id}",
@@ -384,10 +391,6 @@ async fn main() -> Result<()> {
                 .route(
                     "/admin/users/{id}/role",
                     axum::routing::put(routes::admin::set_user_role),
-                )
-                .route(
-                    "/admin/users/{id}/reset-password",
-                    post(routes::admin::admin_send_reset),
                 )
                 .route(
                     "/admin/users/{id}/disable-2fa",
@@ -497,19 +500,6 @@ async fn main() -> Result<()> {
                     post(routes::admin::stop_impersonation),
                 )
                 .route("/auth/verify-email", post(routes::email_auth::verify_email))
-                .route("/auth/resend-verify", post(routes::email_auth::resend_verify))
-                .route(
-                    "/auth/forgot-password",
-                    post(routes::email_auth::forgot_password),
-                )
-                .route(
-                    "/auth/reset-password",
-                    post(routes::email_auth::reset_password),
-                )
-                .route(
-                    "/auth/verify-reset-token",
-                    post(routes::email_auth::verify_reset_token),
-                )
                 .route("/ws", get(routes::ws::ws)),
         )
         .layer(axum::middleware::from_fn_with_state(

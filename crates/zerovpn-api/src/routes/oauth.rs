@@ -16,8 +16,9 @@
 //!      - exchanges the code at Google's token endpoint using the stored
 //!        PKCE verifier,
 //!      - fetches userinfo, refuses if `email_verified == false`,
-//!      - looks up the user by google_id, then by email (auto-link), or
-//!        creates a fresh row (auto-provision),
+//!      - looks up the user by google_id, then by email (auto-link). Unknown
+//!        identities are denied: accounts are created only by an admin invite
+//!        or the deployment bootstrap-admin setting.
 //!      - mints a session exactly like `/auth/login` and returns the
 //!        `LoginResponse` shape so the SPA's auth store hydrates the
 //!        same way.
@@ -42,7 +43,7 @@ use time::{Duration, OffsetDateTime};
 use tracing::{info, warn};
 use url::Url;
 use utoipa::ToSchema;
-use zerovpn_core::models::{UserRole, UserStatus};
+use zerovpn_core::models::UserStatus;
 use zerovpn_db::repos::{audit, failed_logins, oauth_states, session_events, users};
 
 use crate::{
@@ -198,33 +199,21 @@ pub async fn google_callback(
             .await?
             .ok_or_else(|| ApiError::Internal("user vanished after link".to_string()))?
     }
-    // 3) Brand-new user — auto-provision. First user becomes admin to
-    //    mirror /auth/register's bootstrap rule.
+    // 3) Brand-new Google identities must never self-provision. The account
+    //    must have been created by an admin invitation (or bootstrap) first.
     else {
-        let admins = users::count_active_admins(&state.pool).await?;
-        let role = if admins == 0 { UserRole::Admin } else { UserRole::User };
-        let user_id = users::create_google(&state.pool, &email, &google_id, role).await?;
-        info!(%user_id, ?role, "user provisioned via google");
-        let _ = audit::record_with_ua(
-            &state.pool,
-            audit::AuditEntry {
-                actor_user_id: Some(user_id),
-                action: "user.registered",
-                target_type: Some("user"),
-                target_id: Some(user_id),
-                metadata: json!({ "role": role, "via": "google" }),
-                ip: req_ip,
-            },
-            req_ua.as_deref(),
-        )
-        .await;
-        users::find_by_email(&state.pool, &email)
-            .await?
-            .ok_or_else(|| ApiError::Internal("user vanished after create".to_string()))?
+        warn!(email, "rejected Google login for uninvited identity");
+        return Err(ApiError::Forbidden);
     };
 
     if user.status == UserStatus::Suspended {
         return Err(ApiError::Forbidden);
+    }
+    if user.status == UserStatus::PendingVerification {
+        // An invitation is not usable until its one-time email link is
+        // consumed. This also prevents an invitee from skipping the mailbox
+        // verification step by going directly to Google.
+        return Err(ApiError::EmailNotVerified);
     }
 
     let user_policy = load_user_policy(&state.pool).await;
@@ -535,4 +524,3 @@ fn google_disabled() -> Response {
     )
         .into_response()
 }
-

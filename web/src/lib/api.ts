@@ -1015,13 +1015,7 @@ export const adminSetUserEmail = (id: string, email: string) =>
 
 export interface AdminCreateUserBody {
   email: string
-  password?: string
   role?: UserRole
-  /** Skip email verification gate so the user can sign in immediately. */
-  skip_verification?: boolean
-  /** When generating a password, email a setup link instead of returning
-   *  the plaintext to the admin. Defaults to true server-side. */
-  email_setup_link?: boolean
 }
 
 export interface AdminCreatedUser {
@@ -1029,10 +1023,6 @@ export interface AdminCreatedUser {
   email: string
   role: UserRole
   status: UserStatus
-  /** Plaintext password — only present when the admin asked for a
-   *  generated password AND chose not to email a setup link. Surface
-   *  it once in the UI then drop it; never stored. */
-  generated_password?: string
 }
 
 export const adminCreateUser = (body: AdminCreateUserBody) =>

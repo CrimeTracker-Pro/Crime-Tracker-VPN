@@ -1,9 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
-  IconCopy,
   IconDotsVertical,
   IconEye,
-  IconKey,
   IconLogin2,
   IconLogout,
   IconPlus,
@@ -59,7 +57,6 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import {
   ApiError,
-  type AdminCreatedUser,
   type AdminCreateUserBody,
   type AdminUser,
   type AdminUserListFilters,
@@ -73,13 +70,11 @@ import {
   adminImpersonateUser,
   adminListUsers,
   adminRevokeUserSessions,
-  adminSendPasswordReset,
   adminSetUserPolicy,
   adminSetUserRole,
   adminSetUserStatus,
   me,
 } from "@/lib/api"
-import { copyText } from "@/lib/clipboard"
 import { useAuth } from "@/stores/auth"
 
 const USER_STATUS_TO_PILL: Record<UserStatus, Status> = {
@@ -182,11 +177,6 @@ export function UsersPage() {
     if (e instanceof ApiError) toast.error(e.message)
   }
 
-  const sendResetM = useMutation({
-    mutationFn: (id: string) => adminSendPasswordReset(id),
-    onSuccess: () => toast.success("Password-reset link sent"),
-    onError: onActionError,
-  })
   const revokeSessionsM = useMutation({
     mutationFn: (id: string) => adminRevokeUserSessions(id),
     onSuccess: () => toast.success("All sessions for this user invalidated"),
@@ -553,7 +543,6 @@ export function UsersPage() {
                             onUnsuspend={() =>
                               setStatusM.mutate({ id: u.id, status: "active" })
                             }
-                            onResetPassword={() => sendResetM.mutate(u.id)}
                             onForceLogout={() => revokeSessionsM.mutate(u.id)}
                             onDisable2fa={() =>
                               setConfirmAction({ user: u, kind: "disable2fa" })
@@ -784,7 +773,6 @@ function RowActions({
   onImpersonate,
   onSuspend,
   onUnsuspend,
-  onResetPassword,
   onForceLogout,
   onDisable2fa,
   onToggleRole,
@@ -795,7 +783,6 @@ function RowActions({
   onImpersonate: () => void
   onSuspend: () => void
   onUnsuspend: () => void
-  onResetPassword: () => void
   onForceLogout: () => void
   onDisable2fa: () => void
   onToggleRole: () => void
@@ -848,10 +835,6 @@ function RowActions({
             )}
 
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={onResetPassword}>
-              <IconKey className="size-4" />
-              Send password reset
-            </DropdownMenuItem>
             <DropdownMenuItem onClick={onForceLogout}>
               <IconLogout className="size-4" />
               Force log out
@@ -912,25 +895,13 @@ function InviteUserDialogBody({
 }) {
   const [email, setEmail] = useState("")
   const [role, setRole] = useState<UserRole>("user")
-  const [skipVerify, setSkipVerify] = useState(false)
-  const [emailLink, setEmailLink] = useState(true)
-  const [created, setCreated] = useState<AdminCreatedUser | null>(null)
 
   const m = useMutation({
     mutationFn: (body: AdminCreateUserBody) => adminCreateUser(body),
-    onSuccess: (resp) => {
+    onSuccess: () => {
       onCreated()
-      if (resp.generated_password) {
-        // Switch to the credentials view — the admin must be able to
-        // see + copy the plaintext exactly once.
-        setCreated(resp)
-        toast.success(
-          "User created. Copy the password — it won't be shown again."
-        )
-      } else {
-        toast.success("User created. A setup email was sent.")
-        onOpenChange(false)
-      }
+      toast.success("Invitation email sent.")
+      onOpenChange(false)
     },
     onError: (e: unknown) => {
       if (e instanceof ApiError) toast.error(e.message)
@@ -946,68 +917,17 @@ function InviteUserDialogBody({
     m.mutate({
       email: trimmed,
       role,
-      skip_verification: skipVerify,
-      email_setup_link: emailLink,
     })
-  }
-
-  const copyPassword = () => {
-    if (!created?.generated_password) return
-    if (copyText(created.generated_password)) toast.success("Password copied")
-    else toast.error("Clipboard blocked — copy manually")
   }
 
   return (
     <DialogContent className="sm:max-w-md">
-      {created ? (
-        <>
-          <DialogHeader>
-            <DialogTitle>User created</DialogTitle>
-            <DialogDescription>
-              {emailLink
-                ? "A setup link was emailed to the user."
-                : "Hand this password off to the user out-of-band. It won't be shown again."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col gap-1">
-              <Label className="text-xs text-muted-foreground">Email</Label>
-              <code className="border border-border bg-muted/40 px-2 py-1.5 font-mono text-xs">
-                {created.email}
-              </code>
-            </div>
-            {created.generated_password && (
-              <div className="flex flex-col gap-1">
-                <Label className="text-xs text-muted-foreground">
-                  Generated password
-                </Label>
-                <div className="flex items-center gap-2">
-                  <code className="flex-1 border border-border bg-muted/40 px-2 py-1.5 font-mono text-xs select-all">
-                    {created.generated_password}
-                  </code>
-                  <Button size="sm" variant="outline" onClick={copyPassword}>
-                    <IconCopy className="size-3.5" />
-                    Copy
-                  </Button>
-                </div>
-                <p className="text-[11px] text-muted-foreground">
-                  The user is forced to change this on first sign-in.
-                </p>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button onClick={() => onOpenChange(false)}>Done</Button>
-          </DialogFooter>
-        </>
-      ) : (
-        <>
+      <>
           <DialogHeader>
             <DialogTitle>Invite user</DialogTitle>
             <DialogDescription>
-              We'll generate a random password and email a setup link by
-              default. Uncheck "Email setup link" to instead show the password
-              here once for out-of-band delivery.
+              The user receives a one-time verification link, then signs in
+              only with the matching Google account. No password is created.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
@@ -1038,47 +958,16 @@ function InviteUserDialogBody({
                 </SelectContent>
               </Select>
             </div>
-            <label className="flex items-start gap-2 text-xs">
-              <Checkbox
-                checked={skipVerify}
-                onCheckedChange={(c) => setSkipVerify(c === true)}
-              />
-              <span>
-                <span className="block font-medium text-foreground">
-                  Skip email verification
-                </span>
-                <span className="text-muted-foreground">
-                  Account becomes active immediately. Useful for offline
-                  onboarding.
-                </span>
-              </span>
-            </label>
-            <label className="flex items-start gap-2 text-xs">
-              <Checkbox
-                checked={emailLink}
-                onCheckedChange={(c) => setEmailLink(c === true)}
-              />
-              <span>
-                <span className="block font-medium text-foreground">
-                  Email setup link
-                </span>
-                <span className="text-muted-foreground">
-                  Sends a password-reset link instead of revealing the generated
-                  password here.
-                </span>
-              </span>
-            </label>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
             <Button disabled={m.isPending} onClick={submit}>
-              {m.isPending ? "Creating…" : "Create user"}
+              {m.isPending ? "Sending…" : "Send invitation"}
             </Button>
           </DialogFooter>
-        </>
-      )}
+      </>
     </DialogContent>
   )
 }

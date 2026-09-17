@@ -20,22 +20,9 @@ import {
 const LoginPage = lazy(() =>
   import("@/pages/public/Login").then((m) => ({ default: m.LoginPage }))
 )
-const RegisterPage = lazy(() =>
-  import("@/pages/public/Register").then((m) => ({ default: m.RegisterPage }))
-)
 const VerifyEmailPage = lazy(() =>
   import("@/pages/public/VerifyEmail").then((m) => ({
     default: m.VerifyEmailPage,
-  }))
-)
-const ForgotPasswordPage = lazy(() =>
-  import("@/pages/public/ForgotPassword").then((m) => ({
-    default: m.ForgotPasswordPage,
-  }))
-)
-const ResetPasswordPage = lazy(() =>
-  import("@/pages/public/ResetPassword").then((m) => ({
-    default: m.ResetPasswordPage,
   }))
 )
 const GoogleCallbackPage = lazy(() =>
@@ -68,11 +55,6 @@ const SettingsPage = lazy(() =>
 const DeviceDetailPage = lazy(() =>
   import("@/pages/app/DeviceDetail").then((m) => ({
     default: m.DeviceDetailPage,
-  }))
-)
-const ChangePasswordPage = lazy(() =>
-  import("@/pages/app/ChangePassword").then((m) => ({
-    default: m.ChangePasswordPage,
   }))
 )
 const AdminOverviewPage = lazy(() =>
@@ -143,14 +125,8 @@ export const router = createBrowserRouter([
         children: [
           { path: "/", element: <HomeRedirect /> },
           { path: "/login", element: <LoginPage /> },
-          { path: "/register", element: <RegisterPage /> },
           { path: "/verify-email", element: <VerifyEmailPage /> },
-          { path: "/forgot-password", element: <ForgotPasswordPage /> },
-          { path: "/reset-password", element: <ResetPasswordPage /> },
           { path: "/google/callback", element: <GoogleCallbackPage /> },
-          // Force-change-password lives outside DashboardLayout because
-          // ProtectedRoute would redirect us back here in a loop.
-          { path: "/app/change-password", element: <ChangePasswordPage /> },
         ],
       },
 

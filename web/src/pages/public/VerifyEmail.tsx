@@ -1,6 +1,6 @@
 import { IconLoader2 } from "@tabler/icons-react"
 import { useEffect, useState } from "react"
-import { Link, useNavigate, useSearchParams } from "react-router"
+import { Link, useSearchParams } from "react-router"
 import { toast } from "sonner"
 
 import {
@@ -11,15 +11,12 @@ import {
 } from "@/components/layout/AuthShell"
 import { CodeBlock, Pill } from "@/components/swiss"
 import { Button } from "@/components/ui/button"
-import { ApiError, verifyEmail } from "@/lib/api"
-import { useAuth } from "@/stores/auth"
+import { ApiError, googleStartUrl, verifyEmail } from "@/lib/api"
 
 type Status = "pending" | "ok" | "fail"
 
 export function VerifyEmailPage() {
   const [params] = useSearchParams()
-  const navigate = useNavigate()
-  const setUser = useAuth((s) => s.setUser)
   const token = params.get("token")
   // A missing token is derivable straight from the URL; only the async
   // verification result needs state.
@@ -36,20 +33,13 @@ export function VerifyEmailPage() {
     if (!token) return
     let alive = true
     verifyEmail(token)
-      .then((res) => {
+      .then(() => {
         if (!alive) return
         setResult({
           status: "ok",
-          message: "Your email is verified — signing you in…",
+          message: "Invitation verified. Continue with Google to access the VPN.",
         })
-        setUser(res.user)
-        toast.success(`Welcome, ${res.user.email}`)
-        // Small delay so the user briefly sees the success state before
-        // the dashboard appears; matches the 200ms feel of other
-        // post-action transitions in the app.
-        setTimeout(() => {
-          if (alive) navigate("/app", { replace: true })
-        }, 600)
+        toast.success("Invitation verified")
       })
       .catch((e) => {
         if (alive) {
@@ -62,7 +52,7 @@ export function VerifyEmailPage() {
     return () => {
       alive = false
     }
-  }, [token, navigate, setUser])
+  }, [token])
 
   return (
     <AuthShell>
@@ -111,10 +101,13 @@ Subject: Verify your account
             <Button asChild>
               <Link to="/login">Continue to sign in</Link>
             </Button>
-            <Button asChild variant="ghost">
-              <Link to="/register">Try again</Link>
-            </Button>
           </div>
+        )}
+
+        {status === "ok" && (
+          <Button type="button" onClick={() => { window.location.href = googleStartUrl }}>
+            Continue with Google
+          </Button>
         )}
 
         <AuthFooterRule>
