@@ -4,12 +4,11 @@
 //!
 //! **Account-lifecycle cleanup** — rows that are pure overhead once their
 //! TTL has passed:
-//! - Verification tokens older than 24 h (consumed or expired) — the email
-//!   link is dead, the row is just bytes.
+//! - Expired invitations and abandoned OAuth states — the links are dead.
 //! - Soft-deleted users older than 30 d — cascade-removes their devices,
 //!   sessions, etc., reclaiming storage.
-//! - Pending-verification accounts older than 7 d — the verify-email link
-//!   expired at 24 h and the row only blocks the email from re-registering.
+//! - Pending-verification accounts older than 7 d — the invitation link
+//!   expired at 24 h and the row only blocks a new invitation.
 //!
 //! **Operational-data TTLs** — high-volume tables are purged past a fixed
 //! window so they don't grow without bound:
@@ -27,8 +26,8 @@
 //! operator-tunable per table via `ZEROVPN_*_RETENTION_DAYS` env vars (read
 //! once at startup — see `RetentionWindows::from_env`). Setting a var to `0`
 //! disables that table's purge entirely (keep forever) — the opt-in
-//! "unbounded" posture. Account-lifecycle TTLs (verification tokens,
-//! soft-deleted users, abandoned signups) are policy, not storage tuning, so
+//! "unbounded" posture. Account-lifecycle TTLs (invitations,
+//! soft-deleted users, abandoned invitations) are policy, not storage tuning, so
 //! they stay fixed.
 //!
 //! `bandwidth_samples` and `server_samples` are RANGE-partitioned on
@@ -150,6 +149,13 @@ pub async fn run(pool: PgPool) {
 async fn run_once(pool: &PgPool, windows: &RetentionWindows) -> sqlx::Result<()> {
     let now = OffsetDateTime::now_utc();
 
+    // Maintain current and upcoming monthly partitions before any writers
+    // reach a new month. Migration 39 creates the function and provisions
+    // the first set; this call keeps it effective for future months.
+    sqlx::query("SELECT ensure_runtime_partitions()")
+        .execute(pool)
+        .await?;
+
     // --- Account-lifecycle cleanup -------------------------------------
 
     // Expired OAuth states. `consume` deletes a row on use and filters on
@@ -183,9 +189,8 @@ async fn run_once(pool: &PgPool, windows: &RetentionWindows) -> sqlx::Result<()>
     )
     .await?;
 
-    // Drop accounts that signed up but never clicked the verify link. Once
-    // the verify token has been dead for days the row just blocks the email
-    // from being re-registered. Cascades clean up leftover tokens.
+    // Drop invited accounts that never completed verification. Their
+    // invitation links have expired by this point; cascades remove links.
     purge(
         pool,
         "purged stale pending-verification accounts",

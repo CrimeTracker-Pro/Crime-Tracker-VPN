@@ -117,9 +117,8 @@ async fn main() -> Result<()> {
         });
     }
 
-    // Retention purger task — every 6h drops old bandwidth samples,
-    // expires consumed verification tokens, anonymizes audit IPs, and
-    // hard-purges users soft-deleted for >30 days.
+    // Maintenance task — every 6h creates upcoming monthly partitions,
+    // purges expired data, and hard-purges long-deleted accounts.
     {
         let pool = pool.clone();
         tokio::spawn(async move {
@@ -175,4 +174,3 @@ async fn shutdown_signal() {
         _ = terminate => info!("sigterm received"),
     }
 }
-

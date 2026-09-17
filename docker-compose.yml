@@ -165,9 +165,9 @@ services:
       ZEROVPN_WG__INTERFACE: wg0
       # Container whose `docker stats` feed the sidebar server panel
       # (CPU/MEM/Net I/O) — the api container owns wg0. Deterministic
-      # because the compose project is pinned (`name: zerovpn`). Without
+      # because the API has an explicit container_name. Without
       # this the worker falls back to sysinfo and Net I/O reads 0.
-      ZEROVPN_WORKER__VPN_HOST_CONTAINER: zerovpn-api-1
+      ZEROVPN_WORKER__VPN_HOST_CONTAINER: zerovpn-api
     network_mode: "service:api"
     depends_on:
       db:
