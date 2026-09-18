@@ -30,9 +30,10 @@
     --popover: #ffffff;
     --popover-foreground: #0a0a0a;
 
-    /* lime accent — same value light + dark, ink as foreground */
-    --primary: #c6ff3d;
-    --primary-foreground: #0a0a0a;
+    /* Accessible green on light surfaces. Dark mode overrides this with the
+       brighter lime accent, which reads well against dark backgrounds. */
+    --primary: #0b5d2a;
+    --primary-foreground: #ffffff;
 
     /* surface-2 layer = secondary / accent / muted bg */
     --secondary: #f7f7f3;
@@ -166,11 +167,16 @@
    picks the new tint up without per-component edits. Sidebar primary
    mirrors the same. */
 :root[data-accent="lime"] {
+    --primary: #0b5d2a;
+    --primary-foreground: #ffffff;
+    --ring: #0b5d2a;
+    --sidebar-primary: #c6ff3d;
+    --sidebar-primary-foreground: #0a0a0a;
+}
+.dark[data-accent="lime"] {
     --primary: #c6ff3d;
     --primary-foreground: #0a0a0a;
     --ring: #c6ff3d;
-    --sidebar-primary: #c6ff3d;
-    --sidebar-primary-foreground: #0a0a0a;
 }
 :root[data-accent="cobalt"] {
     --primary: #3d5bff;

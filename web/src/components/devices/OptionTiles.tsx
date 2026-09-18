@@ -48,7 +48,7 @@ export function OptionTiles<T extends string>({
             className={[
               "flex flex-col items-center justify-center gap-1.5 rounded-md border px-2 py-2.5 text-center transition-colors",
               selected
-                ? "border-primary bg-primary/5 text-foreground"
+                ? "border-primary bg-primary text-primary-foreground shadow-[inset_0_0_0_1px_var(--primary)]"
                 : "border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground",
             ].join(" ")}
           >
