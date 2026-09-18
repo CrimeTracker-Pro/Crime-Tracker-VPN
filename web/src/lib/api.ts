@@ -211,6 +211,7 @@ export const me = () => apiFetch<PublicUser>("/me")
  * dialog to pre-fill defaults and render hints
  * ("must be inside <cidr>"). */
 export interface MyServerInfo {
+  name: string
   cidr: string
   endpoint_host: string
   endpoint_port: number
@@ -1295,7 +1296,8 @@ export const adminPatchServer = (
     endpoint_host?: string
     endpoint_port?: number
     mtu?: number
-    persistent_keepalive?: number
+  persistent_keepalive?: number
+    name?: string
     default_allowed_ips?: string[]
   }
 ) =>

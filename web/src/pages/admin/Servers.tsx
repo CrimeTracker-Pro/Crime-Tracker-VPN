@@ -62,6 +62,7 @@ export function ServersPage() {
 
 function ServerEditor({ server }: { server: AdminServerRow }) {
   const qc = useQueryClient()
+  const [name, setName] = useState(server.name)
   const [endpointHost, setEndpointHost] = useState(server.endpoint_host)
   const [endpointPort, setEndpointPort] = useState(String(server.endpoint_port))
   const [mtu, setMtu] = useState(String(server.mtu))
@@ -74,6 +75,7 @@ function ServerEditor({ server }: { server: AdminServerRow }) {
       // Treat empty / NaN keepalive as "leave unchanged"; 0 is valid (disables).
       const ka = keepalive.trim() === "" ? NaN : Number(keepalive)
       return adminPatchServer(server.id, {
+        name: name.trim() || undefined,
         endpoint_host: endpointHost.trim() || undefined,
         endpoint_port: Number(endpointPort) || undefined,
         mtu: Number(mtu) || undefined,
@@ -134,6 +136,10 @@ function ServerEditor({ server }: { server: AdminServerRow }) {
         </div>
       }
     >
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor={`server-name-${server.id}`} className="zv-eyebrow">Server name</Label>
+        <Input id={`server-name-${server.id}`} value={name} onChange={(e) => setName(e.target.value)} />
+      </div>
       <div className="flex flex-col gap-1.5">
         <Label className="zv-eyebrow">Public key</Label>
         <CopyableCode value={server.public_key} />

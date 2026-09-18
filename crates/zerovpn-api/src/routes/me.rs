@@ -109,6 +109,7 @@ pub async fn export(
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct MyServerInfo {
+    pub name: String,
     /// CIDR of the WG subnet (e.g. "10.0.0.0/22"). Used by the create-
     /// device dialog to render "must be inside <cidr>" hints and to
     /// pre-fill the split-tunnel allowed_ips.
@@ -141,6 +142,7 @@ pub async fn server_info(
     let active = servers::list_active(&state.pool).await?;
     let s = active.into_iter().next().ok_or(ApiError::NotFound)?;
     Ok(Json(MyServerInfo {
+        name: s.name,
         cidr: format!("{}/{}", s.cidr.network(), s.cidr.prefix()),
         endpoint_host: s.endpoint_host,
         endpoint_port: s.endpoint_port,

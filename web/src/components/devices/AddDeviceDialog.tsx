@@ -470,6 +470,7 @@ function Step2Result({
   result: CreatedDevice
   onDone: () => void
 }) {
+  const serverInfoQ = useQuery({ queryKey: ["me", "server"], queryFn: meServer, staleTime: 5 * 60_000 })
   const parsed = useMemo(() => parseWgConf(result.config), [result.config])
   const [showRaw, setShowRaw] = useState(false)
 
@@ -505,7 +506,7 @@ function Step2Result({
               <Button
                 size="sm"
                 onClick={() =>
-                  downloadConfig(result.device.name, result.config)
+                  downloadConfig(serverInfoQ.data?.name, result.config)
                 }
               >
                 <IconDownload size={14} />
@@ -755,7 +756,7 @@ function IpModeOption({
       aria-pressed={selected}
       className={[
         "flex flex-col items-start gap-1 border border-border p-3 text-left transition",
-        selected ? "border-primary bg-primary/5" : "hover:border-foreground/40",
+        selected ? "border-primary bg-primary text-primary-foreground" : "hover:border-foreground/40",
       ].join(" ")}
     >
       <span className="flex items-center gap-2 text-sm font-medium">
@@ -790,8 +791,8 @@ function formatCapGb(bytes: number): string {
   return gb.toFixed(1).replace(/\.0$/, "")
 }
 
-function downloadConfig(name: string, config: string) {
-  const safe = name.replace(/[^a-z0-9_-]+/gi, "-").toLowerCase() || "crimetracker-vpn"
+function downloadConfig(name: string | undefined, config: string) {
+  const safe = (name ?? "crimetracker-vpn").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 15) || "wireguard"
   const blob = new Blob([config], { type: "text/plain" })
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")

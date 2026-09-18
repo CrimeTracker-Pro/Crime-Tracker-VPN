@@ -599,7 +599,7 @@ export function DeviceDetailPage() {
                     <Button
                       size="sm"
                       onClick={() =>
-                        downloadConfig(rotated.device.name, rotated.config)
+                        downloadConfig(serverQ.data?.name, rotated.config)
                       }
                     >
                       <IconDownload size={14} />
@@ -1263,6 +1263,7 @@ function PeerConfigDialog({
   reissuing: boolean
 }) {
   const initialTab = osToTab(defaultOs)
+  const serverQ = useQuery({ queryKey: ["me", "server"], queryFn: meServer, staleTime: 5 * 60_000 })
 
   // The server always holds an encrypted copy of the private key, so fetch
   // the real .conf (+ QR) whenever the dialog opens. Gated on `open` so the
@@ -1290,7 +1291,8 @@ function PeerConfigDialog({
   // private key gets fetched), this flips to true and the tabs show.
   const hasWorkingConfig = !!realConfig
 
-  const downloadNow = () => downloadConfig(peerName, effectiveConfig)
+  const configName = wireguardConfigName(serverQ.data?.name)
+  const downloadNow = () => downloadConfig(configName, effectiveConfig)
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -1373,23 +1375,23 @@ function PeerConfigDialog({
                 <Step
                   n={1}
                   text="Create the configuration file"
-                  command={`sudo touch /etc/wireguard/${peerName}.conf`}
+                  command={`sudo touch /etc/wireguard/${configName}.conf`}
                 />
                 <Step
                   n={2}
                   text="Open the file and paste the config below"
-                  command={`sudo nano /etc/wireguard/${peerName}.conf`}
+                  command={`sudo nano /etc/wireguard/${configName}.conf`}
                 />
                 <ConfigBlock value={effectiveConfig} />
                 <Step
                   n={3}
                   text="Bring the tunnel up"
-                  command={`sudo wg-quick up ${peerName}`}
+                  command={`sudo wg-quick up ${configName}`}
                 />
                 <Step
                   n={4}
                   text="Enable on boot (optional)"
-                  command={`sudo systemctl enable wg-quick@${peerName}`}
+                  command={`sudo systemctl enable wg-quick@${configName}`}
                 />
               </TabsContent>
 
@@ -1399,7 +1401,7 @@ function PeerConfigDialog({
               >
                 <Step
                   n={1}
-                  text={`Save the config below as ${peerName}.conf`}
+                  text={`Save the config below as ${configName}.conf`}
                 />
                 <ConfigBlock value={effectiveConfig} />
                 <p className="font-mono text-[11px] leading-relaxed text-muted-foreground">
@@ -1423,12 +1425,12 @@ function PeerConfigDialog({
                 <Step
                   n={1}
                   text="Create the file"
-                  command={`touch /etc/wireguard/${peerName}.conf`}
+                  command={`touch /etc/wireguard/${configName}.conf`}
                 />
                 <Step
                   n={2}
                   text="Paste the config and bring it up"
-                  command={`sudo wg-quick up ${peerName}`}
+                  command={`sudo wg-quick up ${configName}`}
                 />
                 <ConfigBlock value={effectiveConfig} grow />
               </TabsContent>
@@ -1628,8 +1630,12 @@ Endpoint             = ${endpoint || "(server endpoint)"}
 PersistentKeepalive  = ${KEEPALIVE_SECS}`
 }
 
-function downloadConfig(name: string, config: string) {
-  const safe = name.replace(/[^a-z0-9_-]+/gi, "-").toLowerCase() || "crimetracker-vpn"
+function wireguardConfigName(name: string | undefined) {
+  return (name ?? "crimetracker-vpn").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 15) || "wireguard"
+}
+
+function downloadConfig(name: string | undefined, config: string) {
+  const safe = wireguardConfigName(name)
   const blob = new Blob([config], { type: "text/plain" })
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")

@@ -62,14 +62,14 @@ pub async fn create(pool: &PgPool, new: NewServer<'_>) -> sqlx::Result<Uuid> {
     Ok(id)
 }
 
-/// `(id, private_key_encrypted, cidr)` for the `default` server, or `None` if it does
+/// `(id, private_key_encrypted, cidr)` for the primary active server, or `None` if it does
 /// not exist yet. `private_key_encrypted` is `None` for rows created before the
 /// key was stored in the DB (backfilled on the next boot).
 pub async fn default_key_state(
     pool: &PgPool,
 ) -> sqlx::Result<Option<(Uuid, Option<Vec<u8>>, IpNetwork)>> {
     sqlx::query_as::<_, (Uuid, Option<Vec<u8>>, IpNetwork)>(
-        "SELECT id, private_key_encrypted, cidr FROM servers WHERE name = 'default'",
+        "SELECT id, private_key_encrypted, cidr FROM servers WHERE is_active = TRUE ORDER BY created_at ASC LIMIT 1",
     )
     .fetch_optional(pool)
     .await

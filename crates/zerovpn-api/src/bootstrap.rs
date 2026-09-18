@@ -294,7 +294,7 @@ pub async fn ensure_default_server(pool: &PgPool, kek: &Kek) -> anyhow::Result<(
     let id = servers::create(
         pool,
         servers::NewServer {
-            name: "default",
+            name: "Crime Tracker VPN",
             region: "local",
             endpoint_host: &endpoint_host,
             endpoint_port: listen_port,

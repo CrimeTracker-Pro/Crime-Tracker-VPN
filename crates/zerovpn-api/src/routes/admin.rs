@@ -1908,6 +1908,7 @@ pub async fn list_servers(
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct PatchServerBody {
+    pub name: Option<String>,
     pub endpoint_host: Option<String>,
     pub endpoint_port: Option<i32>,
     pub mtu: Option<i32>,
@@ -1938,6 +1939,10 @@ pub async fn patch_server(
     Path(id): Path<Uuid>,
     Json(body): Json<PatchServerBody>,
 ) -> ApiResult<impl IntoResponse> {
+    if let Some(name) = &body.name
+        && name.trim().is_empty() {
+            return Err(ApiError::Validation("server name cannot be empty".into()));
+        }
     if let Some(port) = body.endpoint_port
         && !(1..=65535).contains(&port) {
             return Err(ApiError::Validation("endpoint_port must be 1..=65535".into()));
@@ -1964,14 +1969,16 @@ pub async fn patch_server(
     }
     sqlx::query(
         r#"UPDATE servers
-           SET endpoint_host        = COALESCE($2, endpoint_host),
-               endpoint_port        = COALESCE($3, endpoint_port),
-               mtu                  = COALESCE($4, mtu),
-               persistent_keepalive = COALESCE($5, persistent_keepalive),
-               default_allowed_ips  = COALESCE($6, default_allowed_ips)
+           SET name                 = COALESCE($2, name),
+               endpoint_host        = COALESCE($3, endpoint_host),
+               endpoint_port        = COALESCE($4, endpoint_port),
+               mtu                  = COALESCE($5, mtu),
+               persistent_keepalive = COALESCE($6, persistent_keepalive),
+               default_allowed_ips  = COALESCE($7, default_allowed_ips)
            WHERE id = $1"#,
     )
     .bind(id)
+    .bind(&body.name)
     .bind(&body.endpoint_host)
     .bind(body.endpoint_port)
     .bind(body.mtu)
@@ -1987,6 +1994,7 @@ pub async fn patch_server(
             target_type: Some("server"),
             target_id: Some(id),
             metadata: json!({
+                "name": body.name,
                 "endpoint_host": body.endpoint_host,
                 "endpoint_port": body.endpoint_port,
                 "mtu": body.mtu,
