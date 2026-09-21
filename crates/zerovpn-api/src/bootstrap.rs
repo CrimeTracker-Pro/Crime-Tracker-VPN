@@ -83,6 +83,26 @@ async fn run(cmd: &str, args: &[&str]) -> bool {
     }
 }
 
+/// Resolve a service name to the IPv4 address accepted by iptables DNAT rules.
+/// The WireGuard gateway and Traefik share a Docker network, so resolving the
+/// service at startup keeps the forwarding rule valid after an address change.
+async fn resolve_ipv4_target(target: &str) -> Option<String> {
+    if target.parse::<Ipv4Addr>().is_ok() {
+        return Some(target.to_string());
+    }
+    match tokio::net::lookup_host((target, 443)).await {
+        Ok(mut addresses) => addresses
+            .find_map(|address| match address.ip() {
+                std::net::IpAddr::V4(ip) => Some(ip.to_string()),
+                std::net::IpAddr::V6(_) => None,
+            }),
+        Err(error) => {
+            warn!(%target, %error, "could not resolve VPN HTTPS target");
+            None
+        }
+    }
+}
+
 /// Permit forwarding between WireGuard peers and, when configured, expose the
 /// host's SMB service through the VPN gateway address. Client AllowedIPs is a
 /// routing hint, not authorization; the final drop rules still prevent clients
@@ -104,6 +124,10 @@ async fn ensure_peer_only_forwarding(iface: &str) {
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
     let ssh_allowed_ip = std::env::var("ZEROVPN_WG__SSH_ALLOWED_IP")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let https_target = std::env::var("ZEROVPN_WG__HTTPS_TARGET")
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
@@ -195,6 +219,43 @@ async fn ensure_peer_only_forwarding(iface: &str) {
     } else {
         ssh_target.is_none() && ssh_allowed_ip.is_none()
     };
+
+    // HTTPS is the sole application path exposed through the gateway. The
+    // public Traefik routers allow only this Docker-network source, so direct
+    // Internet requests are rejected even though TLS remains on port 443.
+    let https_traffic = if let Some(target) = &https_target {
+        if let Some(target) = resolve_ipv4_target(target).await {
+            let target_cidr = format!("{target}/32");
+            let outbound = run(
+                "iptables",
+                &["-A", CHAIN, "-i", iface, "-s", &vpn_cidr, "-d", &target_cidr,
+                  "-p", "tcp", "--dport", "443", "-m", "conntrack", "--ctstate",
+                  "NEW,ESTABLISHED", "-j", "ACCEPT"],
+            ).await;
+            let returning = run(
+                "iptables",
+                &["-A", CHAIN, "-o", iface, "-s", &target_cidr, "-d", &vpn_cidr,
+                  "-p", "tcp", "--sport", "443", "-m", "conntrack", "--ctstate",
+                  "ESTABLISHED", "-j", "ACCEPT"],
+            ).await;
+            let destination = format!("{target}:443");
+            let dnat = run(
+                "iptables",
+                &["-t", "nat", "-A", DNAT_CHAIN, "-i", iface, "-d", "10.0.0.1/32",
+                  "-p", "tcp", "--dport", "443", "-j", "DNAT", "--to-destination", &destination],
+            ).await;
+            let snat = run(
+                "iptables",
+                &["-t", "nat", "-A", SNAT_CHAIN, "-s", &vpn_cidr, "-d", &target_cidr,
+                  "-p", "tcp", "--dport", "443", "-j", "MASQUERADE"],
+            ).await;
+            outbound && returning && dnat && snat
+        } else {
+            false
+        }
+    } else {
+        true
+    };
     let drop_from_vpn = run("iptables", &["-A", CHAIN, "-i", iface, "-j", "DROP"]).await;
     let drop_to_vpn = run("iptables", &["-A", CHAIN, "-o", iface, "-j", "DROP"]).await;
 
@@ -215,8 +276,8 @@ async fn ensure_peer_only_forwarding(iface: &str) {
         let _ = run("iptables", &["-t", "nat", "-D", "POSTROUTING", "-o", "eth0", "-j", "MASQUERADE"]).await;
     }
 
-    if peer_traffic && smb_traffic && ssh_traffic && drop_from_vpn && drop_to_vpn && ping_gateway && drop_gateway {
-        info!(interface = %iface, %vpn_cidr, smb_target = ?smb_target, ssh_target = ?ssh_target, ssh_allowed_ip = ?ssh_allowed_ip, "enabled restricted WireGuard forwarding");
+    if peer_traffic && smb_traffic && ssh_traffic && https_traffic && drop_from_vpn && drop_to_vpn && ping_gateway && drop_gateway {
+        info!(interface = %iface, %vpn_cidr, smb_target = ?smb_target, ssh_target = ?ssh_target, ssh_allowed_ip = ?ssh_allowed_ip, https_target = ?https_target, "enabled restricted WireGuard forwarding");
     } else {
         warn!(interface = %iface, %vpn_cidr, "failed to install complete peer-only forwarding policy");
     }
