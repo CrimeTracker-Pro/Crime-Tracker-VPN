@@ -112,6 +112,7 @@ services:
       # peers via `wg set` against its UAPI socket. No kernel module involved.
       ZEROVPN_WG__BACKEND: shell
       ZEROVPN_WG__INTERFACE: wg0
+      ZEROVPN_WG__BLOCKED_LAN_CIDR: 192.168.1.0/24
       ZEROVPN_WG__SERVER_CONFIG_PATH: /wg/wg0.conf
       WG_QUICK_USERSPACE_IMPLEMENTATION: boringtun-cli
       # The worker shares THIS container's netns (see worker.network_mode) so it

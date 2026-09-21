@@ -83,6 +83,23 @@ async fn run(cmd: &str, args: &[&str]) -> bool {
     }
 }
 
+/// Block VPN clients from reaching the physical LAN even if they manually
+/// widen AllowedIPs in their local WireGuard configuration. AllowedIPs is a
+/// routing hint, not authorization, so this restriction must be server-side.
+async fn ensure_lan_block(iface: &str) {
+    let lan_cidr = std::env::var("ZEROVPN_WG__BLOCKED_LAN_CIDR")
+        .unwrap_or_else(|_| "192.168.1.0/24".to_string());
+    let rule = ["FORWARD", "-i", iface, "-d", lan_cidr.as_str(), "-j", "DROP"];
+    if run("iptables", &["-C", rule[0], rule[1], rule[2], rule[3], rule[4], rule[5], rule[6]]).await {
+        return;
+    }
+    if run("iptables", &["-I", rule[0], "1", rule[1], rule[2], rule[3], rule[4], rule[5], rule[6]]).await {
+        info!(interface = %iface, %lan_cidr, "blocked VPN access to LAN subnet");
+    } else {
+        warn!(interface = %iface, %lan_cidr, "failed to install VPN-to-LAN block rule");
+    }
+}
+
 /// Path `wg0.conf` is written to (shared `wg_config` volume). Configurable so it
 /// matches wherever the WG image reads its config from.
 fn server_conf_path() -> PathBuf {
@@ -177,6 +194,7 @@ async fn bring_up_wg(iface: &str, conf_str: &str) {
     // Best-effort forwarding + NAT for full-tunnel egress. Non-fatal — split
     // tunnel to the VPN subnet needs none of this.
     let _ = run("sysctl", &["-w", "net.ipv4.ip_forward=1"]).await;
+    ensure_lan_block(iface).await;
     let _ = run("iptables", &["-A", "FORWARD", "-i", iface, "-j", "ACCEPT"]).await;
     let _ = run("iptables", &["-A", "FORWARD", "-o", iface, "-j", "ACCEPT"]).await;
     let _ = run(
