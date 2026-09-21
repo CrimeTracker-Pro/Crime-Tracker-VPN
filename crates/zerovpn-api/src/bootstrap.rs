@@ -99,6 +99,14 @@ async fn ensure_peer_only_forwarding(iface: &str) {
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
+    let ssh_target = std::env::var("ZEROVPN_WG__SSH_TARGET")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let ssh_allowed_ip = std::env::var("ZEROVPN_WG__SSH_ALLOWED_IP")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
 
     let _ = run("iptables", &["-N", CHAIN]).await;
     let _ = run("iptables", &["-F", CHAIN]).await;
@@ -154,6 +162,39 @@ async fn ensure_peer_only_forwarding(iface: &str) {
     } else {
         true
     };
+
+    let ssh_traffic = if let (Some(target), Some(allowed_ip)) = (&ssh_target, &ssh_allowed_ip) {
+        let target_cidr = format!("{target}/32");
+        let allowed_cidr = format!("{allowed_ip}/32");
+        let outbound = run(
+            "iptables",
+            &["-A", CHAIN, "-i", iface, "-s", &allowed_cidr, "-d", &target_cidr,
+              "-p", "tcp", "--dport", "22", "-m", "conntrack", "--ctstate",
+              "NEW,ESTABLISHED", "-j", "ACCEPT"],
+        ).await;
+        let returning = run(
+            "iptables",
+            &["-A", CHAIN, "-o", iface, "-s", &target_cidr, "-d", &allowed_cidr,
+              "-p", "tcp", "--sport", "22", "-m", "conntrack", "--ctstate",
+              "ESTABLISHED", "-j", "ACCEPT"],
+        ).await;
+
+        let destination = format!("{target}:22");
+        let dnat = run(
+            "iptables",
+            &["-t", "nat", "-A", DNAT_CHAIN, "-i", iface, "-s", &allowed_cidr,
+              "-d", "10.0.0.1/32", "-p", "tcp", "--dport", "22", "-j", "DNAT",
+              "--to-destination", &destination],
+        ).await;
+        let snat = run(
+            "iptables",
+            &["-t", "nat", "-A", SNAT_CHAIN, "-s", &allowed_cidr, "-d", &target_cidr,
+              "-p", "tcp", "--dport", "22", "-j", "MASQUERADE"],
+        ).await;
+        outbound && returning && dnat && snat
+    } else {
+        ssh_target.is_none() && ssh_allowed_ip.is_none()
+    };
     let drop_from_vpn = run("iptables", &["-A", CHAIN, "-i", iface, "-j", "DROP"]).await;
     let drop_to_vpn = run("iptables", &["-A", CHAIN, "-o", iface, "-j", "DROP"]).await;
 
@@ -174,8 +215,8 @@ async fn ensure_peer_only_forwarding(iface: &str) {
         let _ = run("iptables", &["-t", "nat", "-D", "POSTROUTING", "-o", "eth0", "-j", "MASQUERADE"]).await;
     }
 
-    if peer_traffic && smb_traffic && drop_from_vpn && drop_to_vpn && ping_gateway && drop_gateway {
-        info!(interface = %iface, %vpn_cidr, smb_target = ?smb_target, "enabled restricted WireGuard forwarding");
+    if peer_traffic && smb_traffic && ssh_traffic && drop_from_vpn && drop_to_vpn && ping_gateway && drop_gateway {
+        info!(interface = %iface, %vpn_cidr, smb_target = ?smb_target, ssh_target = ?ssh_target, ssh_allowed_ip = ?ssh_allowed_ip, "enabled restricted WireGuard forwarding");
     } else {
         warn!(interface = %iface, %vpn_cidr, "failed to install complete peer-only forwarding policy");
     }
