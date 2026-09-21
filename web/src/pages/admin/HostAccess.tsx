@@ -91,7 +91,7 @@ function RuleSheet({ open, onOpenChange, rule, devices, onSaved }: { open: boole
   const valid = Boolean(form.name.trim() && form.gateway_port > 0 && form.backend_port > 0 && (form.allow_all_peers || form.device_ids.length > 0))
 
   return <Sheet open={open} onOpenChange={onOpenChange}>
-    <SheetContent className="w-full sm:max-w-none md:w-1/2">
+    <SheetContent className="!w-full !max-w-none md:!w-[50vw]">
       <SheetHeader className="border-b pr-12"><SheetTitle>{rule ? "Edit host access rule" : "New host access rule"}</SheetTitle><SheetDescription>Changes are written to the database and applied to the live firewall immediately.</SheetDescription></SheetHeader>
       <div className="flex-1 space-y-5 overflow-y-auto px-4 pb-4">
         <div className="grid gap-3 sm:grid-cols-2">
