@@ -56,28 +56,6 @@ pub struct AssignmentBody {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
-pub struct AssignedUser {
-    pub id: Uuid,
-    pub email: String,
-    pub role: String,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct AssignedDevice {
-    pub id: Uuid,
-    pub name: String,
-    pub allocated_ip: String,
-    pub direct: bool,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-pub struct AssignmentDetails {
-    pub users: Vec<AssignedUser>,
-    pub devices: Vec<AssignedDevice>,
-    pub groups: Vec<String>,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
 pub struct ValidationResult {
     pub valid: bool,
     pub errors: Vec<String>,
@@ -177,31 +155,6 @@ pub async fn set_assignments(State(state): State<AppState>, RequireAdmin(actor):
     tx.commit().await?;
     audit::record(&state.pool, audit::AuditEntry { actor_user_id: Some(actor.id), action: "admin.vpn_service_assignments_updated", target_type: Some("vpn_service"), target_id: Some(id), metadata: json!({"users": body.users.len(), "devices": body.devices.len(), "groups": body.groups.len()}), ip: None }).await?;
     Ok(Json(json!({"status":"ok"})))
-}
-
-pub async fn get_assignments(State(state): State<AppState>, RequireAdmin(_): RequireAdmin, Path(id): Path<Uuid>) -> ApiResult<impl IntoResponse> {
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM vpn_services WHERE id=$1)")
-        .bind(id).fetch_one(&state.pool).await?;
-    if !exists { return Err(ApiError::NotFound); }
-    let user_rows: Vec<(Uuid, String, String)> = sqlx::query_as(
-        "SELECT u.id,u.email,u.role::text FROM vpn_service_users su JOIN users u ON u.id=su.user_id WHERE su.service_id=$1 ORDER BY u.email"
-    ).bind(id).fetch_all(&state.pool).await?;
-    let device_rows: Vec<(Uuid, String, String, bool)> = sqlx::query_as(
-        "WITH effective AS (\
-           SELECT sd.device_id,TRUE AS direct FROM vpn_service_devices sd WHERE sd.service_id=$1 \
-           UNION ALL SELECT d.id,FALSE FROM vpn_service_users su JOIN devices d ON d.user_id=su.user_id WHERE su.service_id=$1 \
-           UNION ALL SELECT gd.device_id,FALSE FROM vpn_service_groups sg JOIN vpn_group_devices gd ON gd.group_id=sg.group_id WHERE sg.service_id=$1 \
-           UNION ALL SELECT d.id,FALSE FROM vpn_service_groups sg JOIN vpn_group_users gu ON gu.group_id=sg.group_id JOIN devices d ON d.user_id=gu.user_id WHERE sg.service_id=$1 \
-         ) SELECT d.id,d.name,host(d.allocated_ip),BOOL_OR(e.direct) FROM effective e JOIN devices d ON d.id=e.device_id GROUP BY d.id,d.name,d.allocated_ip ORDER BY d.name"
-    ).bind(id).fetch_all(&state.pool).await?;
-    let groups: Vec<String> = sqlx::query_scalar(
-        "SELECT g.name FROM vpn_service_groups sg JOIN vpn_access_groups g ON g.id=sg.group_id WHERE sg.service_id=$1 ORDER BY g.name"
-    ).bind(id).fetch_all(&state.pool).await?;
-    Ok(Json(AssignmentDetails {
-        users: user_rows.into_iter().map(|(id,email,role)| AssignedUser { id,email,role }).collect(),
-        devices: device_rows.into_iter().map(|(id,name,allocated_ip,direct)| AssignedDevice { id,name,allocated_ip,direct }).collect(),
-        groups,
-    }))
 }
 
 pub async fn validate(State(state): State<AppState>, RequireAdmin(_): RequireAdmin) -> ApiResult<impl IntoResponse> {

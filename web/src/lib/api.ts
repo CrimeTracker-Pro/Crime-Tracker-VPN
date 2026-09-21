@@ -122,12 +122,6 @@ export interface VpnPolicyRevision {
   applied_at: string | null
 }
 
-export interface VpnPolicyAssignments {
-  users: { id: string; email: string; role: string }[]
-  devices: { id: string; name: string; allocated_ip: string; direct: boolean }[]
-  groups: string[]
-}
-
 export interface PublicUser {
   id: string
   email: string
@@ -225,8 +219,6 @@ export const adminSetPolicyAssignments = (id: string, body: { users: string[]; d
     method: "PUT",
     body: JSON.stringify(body),
   })
-export const adminGetPolicyAssignments = (id: string) =>
-  apiFetch<VpnPolicyAssignments>(`/admin/policy/services/${id}/assignments`)
 export const adminPolicyStatus = () => apiFetch<VpnPolicyStatus[]>("/admin/policy/status")
 export const adminPolicyRevisions = () => apiFetch<VpnPolicyRevision[]>("/admin/policy/revisions")
 export const adminValidatePolicy = () => apiFetch<{ valid: boolean; errors: string[]; warnings: string[] }>("/admin/policy/validate", { method: "POST" })
