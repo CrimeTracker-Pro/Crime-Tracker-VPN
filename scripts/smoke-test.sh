@@ -39,8 +39,10 @@ check "worker is up" bash -c "docker compose ps worker --format '{{.Status}}' | 
 check "api is up" bash -c "docker compose ps api --format '{{.Status}}' | grep -q '^Up'"
 
 echo "Worker → API ZMQ"
-check "worker is publishing heartbeats" bash -c "docker compose logs worker | grep -q 'events.heartbeat'"
-check "api connected ZMQ subscriber" bash -c "docker compose logs api | grep -q 'zmq subscriber'"
+check "worker shares current api namespace" bash -c 'api_id=$(docker inspect -f "{{.Id}}" crimetracker-vpn-api) && [[ $(docker inspect -f "{{.HostConfig.NetworkMode}}" crimetracker-vpn-worker) == "container:$api_id" ]]'
+check "worker publisher listens on :5555" bash -c "docker exec crimetracker-vpn-api sh -c \"ss -ltn | grep -q ':5555 ' \""
+check "worker is polling WireGuard and database" bash -c "docker compose logs worker | grep -q '\"message\":\"wg poll\"'"
+check "api receives worker events" bash -c "docker compose logs api | grep -Eq '\"message\":\"(zmq subscriber connected|event received)\"'"
 
 # ---- auth + device flow -----------------------------------------------------
 # Invitation-only Google sign-in needs a browser and a verified Google account.

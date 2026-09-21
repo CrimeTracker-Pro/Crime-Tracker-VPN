@@ -86,6 +86,9 @@ The **worker shares the api's netns** (`network_mode: service:api`) so its polle
 - **Stateless api, DB-only recovery**: the api mounts no `wg_config` volume; a `pg_data` restore (+ the KEK) brings the whole tunnel back.
 - **Trade-off**: the internet-facing api now runs privileged (`cap_add: NET_ADMIN` + `/dev/net/tun`) instead of the old `cap_drop: [ALL]` / `read_only` sidecar isolation. This was a deliberate choice to eliminate the api's volumes; the security-conservative alternative is a separate privileged WG sidecar.
 - **No host dependency**: uses userspace boringtun (baked into the api image), so prod needs no kernel module / `modprobe` / `/lib/modules`.
+- **Coupled lifecycle**: replacing the api invalidates the namespace joined by
+  the worker. Production deployments use `make up-prod`, which recreates the
+  worker after api and verifies the namespace identity and live stats pipeline.
 - ⚠ **Verified on macOS/dev** (the same boringtun path). Validate the privileged prod image on a real Linux host before relying on it.
 
 ## Obfuscation

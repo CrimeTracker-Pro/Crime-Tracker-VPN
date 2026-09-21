@@ -45,7 +45,7 @@ up: ## Start the dev stack locally; builds images if missing
 
 .PHONY: up-prod
 up-prod: ## Build local images and start the production-shaped stack
-	$(COMPOSE_BUILD) up -d --build
+	./scripts/deploy-prod.sh
 
 # Local image names + git SHA for optional versioned local tags.
 REGISTRY  := $(or $(shell grep -E '^ZEROVPN_REGISTRY=' .env 2>/dev/null | cut -d= -f2),local)

@@ -75,6 +75,18 @@ make bootstrap-admin EMAIL=admin@yourdomain
 
 The `.env.example` header lists the values that must flip for prod (`ZEROVPN_ENVIRONMENT`, `ZEROVPN_DOMAIN`/`ZEROVPN_PUBLIC_URL`, `ZEROVPN_CERT_RESOLVER=le`, `ZEROVPN_ACME_EMAIL`, the `ZEROVPN_SMTP__*` block, `ZEROVPN_WG__SERVER_ENDPOINT`, and `RUST_LOG`).
 
+`make up-prod` must be used for production deployments. The worker shares the
+api container's network namespace to read `wg0`. The deployment wrapper starts
+the stack, recreates the worker only after the current api exists, and verifies
+the namespace identity, port 5555 publisher, WireGuard interface, database
+poller, and API subscriber. Running `docker compose up` or recreating `api`
+alone can leave the worker attached to the replaced namespace, which stops live
+online status updates. To repair a manual api recreation, run:
+
+```
+docker compose up -d --no-deps --force-recreate worker
+```
+
 `ZEROVPN_DOMAIN` must resolve to this host before `make up-prod`, or Traefik's first Let's Encrypt issuance attempt will fail. The api will also refuse to boot if `ZEROVPN_DOMAIN` is `localhost` or a `REPLACE_*` placeholder — see [validate_production_config in crates/zerovpn-api/src/main.rs](../crates/zerovpn-api/src/main.rs).
 
 **Mail (prod):** MailHog is dev-only (`docker-compose.mail.yml`) and never starts under `make up-prod`. Point `ZEROVPN_SMTP__*` at a real relay and set the TLS mode explicitly — e.g. Gmail: `HOST=smtp.gmail.com`, `PORT=587`, `STARTTLS=true`, `SSL_TLS=false`, `VALIDATE_CERTS=true`, plus `USERNAME`/`PASSWORD` (a Google **App Password**). Use `SSL_TLS=true` (port 465) for implicit-TLS relays; `VALIDATE_CERTS=false` only for an internal self-signed relay. See the SMTP block in `.env.example`.
@@ -111,6 +123,7 @@ The api holds `CAP_NET_ADMIN` + `/dev/net/tun` to do this (the security trade-of
 | Frontend "API unreachable" | api container down or Traefik upstream unhealthy | `docker compose ps`, then `docker compose logs api`. |
 | `wg show` empty / no tunnel | wg0 didn't come up | `docker compose logs api` — look for "wg interface up" vs a `wg-quick up failed` warning. The api needs `NET_ADMIN` + `/dev/net/tun` (both set in compose). |
 | `zmq publisher bind` fails | port 5555 already used | another compose project running; `docker compose down` first. |
+| Peers handshake but UI shows every device offline | worker is attached to a replaced api network namespace | Run `docker compose up -d --no-deps --force-recreate worker`, then use `make up-prod` for future deployments. |
 | Maintenance mode locks out admins | The middleware's auth-path bypass exempts `/auth/*`, `/health`, `/ready`. Admin auth still works | Sign in normally; admin role bypasses the 503. |
 | `wg0.conf` missing in wg container | api hasn't (re)written it from the DB yet, or the shared volume isn't writable | Restart the api — `ensure_default_server` rebuilds `wg0.conf` from `servers.private_key_encrypted` on boot. If it persists, verify the `wg_config` mount on the api service and check logs for "wg0.conf write failed". |
 
