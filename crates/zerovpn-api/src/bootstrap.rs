@@ -83,20 +83,48 @@ async fn run(cmd: &str, args: &[&str]) -> bool {
     }
 }
 
-/// Block VPN clients from reaching the physical LAN even if they manually
-/// widen AllowedIPs in their local WireGuard configuration. AllowedIPs is a
-/// routing hint, not authorization, so this restriction must be server-side.
-async fn ensure_lan_block(iface: &str) {
-    let lan_cidr = std::env::var("ZEROVPN_WG__BLOCKED_LAN_CIDR")
-        .unwrap_or_else(|_| "192.168.1.0/24".to_string());
-    let rule = ["FORWARD", "-i", iface, "-d", lan_cidr.as_str(), "-j", "DROP"];
-    if run("iptables", &["-C", rule[0], rule[1], rule[2], rule[3], rule[4], rule[5], rule[6]]).await {
-        return;
+/// Permit forwarding only between WireGuard peers. Client AllowedIPs is a
+/// routing hint, not authorization; these server-side rules prevent a client
+/// from reaching the LAN, Docker networks, or internet by widening it.
+async fn ensure_peer_only_forwarding(iface: &str) {
+    const CHAIN: &str = "ZEROVPN-WG";
+    const INPUT_CHAIN: &str = "ZEROVPN-WG-IN";
+    let vpn_cidr = std::env::var("ZEROVPN_WG__VPN_CIDR")
+        .unwrap_or_else(|_| "10.0.0.0/22".to_string());
+
+    let _ = run("iptables", &["-N", CHAIN]).await;
+    let _ = run("iptables", &["-F", CHAIN]).await;
+    if !run("iptables", &["-C", "FORWARD", "-j", CHAIN]).await {
+        let _ = run("iptables", &["-I", "FORWARD", "1", "-j", CHAIN]).await;
     }
-    if run("iptables", &["-I", rule[0], "1", rule[1], rule[2], rule[3], rule[4], rule[5], rule[6]]).await {
-        info!(interface = %iface, %lan_cidr, "blocked VPN access to LAN subnet");
+    let allowed = run(
+        "iptables",
+        &["-A", CHAIN, "-i", iface, "-o", iface, "-s", &vpn_cidr, "-d", &vpn_cidr, "-j", "ACCEPT"],
+    ).await;
+    let drop_from_vpn = run("iptables", &["-A", CHAIN, "-i", iface, "-j", "DROP"]).await;
+    let drop_to_vpn = run("iptables", &["-A", CHAIN, "-o", iface, "-j", "DROP"]).await;
+
+    // The gateway itself is reachable only for ICMP health checks over wg0.
+    // Do not expose API, telemetry, or any future container-local listener.
+    let _ = run("iptables", &["-N", INPUT_CHAIN]).await;
+    let _ = run("iptables", &["-F", INPUT_CHAIN]).await;
+    if !run("iptables", &["-C", "INPUT", "-j", INPUT_CHAIN]).await {
+        let _ = run("iptables", &["-I", "INPUT", "1", "-j", INPUT_CHAIN]).await;
+    }
+    let ping_gateway = run(
+        "iptables",
+        &["-A", INPUT_CHAIN, "-i", iface, "-p", "icmp", "--icmp-type", "echo-request", "-j", "ACCEPT"],
+    ).await;
+    let drop_gateway = run("iptables", &["-A", INPUT_CHAIN, "-i", iface, "-j", "DROP"]).await;
+
+    while run("iptables", &["-t", "nat", "-C", "POSTROUTING", "-o", "eth0", "-j", "MASQUERADE"]).await {
+        let _ = run("iptables", &["-t", "nat", "-D", "POSTROUTING", "-o", "eth0", "-j", "MASQUERADE"]).await;
+    }
+
+    if allowed && drop_from_vpn && drop_to_vpn && ping_gateway && drop_gateway {
+        info!(interface = %iface, %vpn_cidr, "enabled peer-only WireGuard forwarding");
     } else {
-        warn!(interface = %iface, %lan_cidr, "failed to install VPN-to-LAN block rule");
+        warn!(interface = %iface, %vpn_cidr, "failed to install complete peer-only forwarding policy");
     }
 }
 
@@ -191,17 +219,10 @@ async fn bring_up_wg(iface: &str, conf_str: &str) {
     }
     info!(interface = %iface, "wg interface up");
 
-    // Best-effort forwarding + NAT for full-tunnel egress. Non-fatal — split
-    // tunnel to the VPN subnet needs none of this.
+    // Forward only peer-to-peer VPN traffic. The gateway address itself is
+    // handled by INPUT and remains reachable for tunnel-health checks.
     let _ = run("sysctl", &["-w", "net.ipv4.ip_forward=1"]).await;
-    ensure_lan_block(iface).await;
-    let _ = run("iptables", &["-A", "FORWARD", "-i", iface, "-j", "ACCEPT"]).await;
-    let _ = run("iptables", &["-A", "FORWARD", "-o", iface, "-j", "ACCEPT"]).await;
-    let _ = run(
-        "iptables",
-        &["-t", "nat", "-A", "POSTROUTING", "-o", "eth0", "-j", "MASQUERADE"],
-    )
-    .await;
+    ensure_peer_only_forwarding(iface).await;
 
 }
 
