@@ -79,7 +79,7 @@ export interface HostAccessDevice {
 }
 
 export type SaveHostAccessRule = Pick<HostAccessRule,
-  "name" | "description" | "protocol" | "gateway_port" | "backend_port" |
+  "name" | "description" | "protocol" | "gateway_port" | "backend_ip" | "backend_port" |
   "enabled" | "allow_all_peers" | "device_ids"
 >
 

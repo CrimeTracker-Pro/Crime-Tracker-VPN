@@ -1,5 +1,6 @@
 use axum::{extract::{Path, State}, Json};
 use ipnetwork::IpNetwork;
+use std::net::Ipv4Addr;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
@@ -42,6 +43,7 @@ pub struct SaveHostAccessRule {
     #[serde(default)]
     description: String,
     protocol: String,
+    backend_ip: String,
     gateway_port: i32,
     backend_port: i32,
     #[serde(default = "default_true")]
@@ -54,6 +56,24 @@ pub struct SaveHostAccessRule {
 
 fn default_true() -> bool { true }
 
+fn host_ip(value: &str) -> ApiResult<IpNetwork> {
+    let ip = value.trim().parse::<Ipv4Addr>()
+        .map_err(|_| ApiError::Validation("managed host must be a valid IPv4 address".into()))?;
+    format!("{ip}/32").parse::<IpNetwork>()
+        .map_err(|_| ApiError::Validation("managed host must be a valid IPv4 address".into()))
+}
+
+fn gateway_ip(cidr: IpNetwork) -> ApiResult<IpNetwork> {
+    match cidr {
+        IpNetwork::V4(network) if network.prefix() <= 30 => {
+            let first = Ipv4Addr::from(u32::from(network.network()) + 1);
+            format!("{first}/32").parse::<IpNetwork>()
+                .map_err(|_| ApiError::Validation("server CIDR has no usable gateway address".into()))
+        }
+        _ => Err(ApiError::Validation("server CIDR must provide an IPv4 gateway".into())),
+    }
+}
+
 fn validate(body: &SaveHostAccessRule) -> ApiResult<()> {
     if body.name.trim().is_empty() || body.name.len() > 80 {
         return Err(ApiError::Validation("name must contain 1–80 characters".into()));
@@ -61,6 +81,7 @@ fn validate(body: &SaveHostAccessRule) -> ApiResult<()> {
     if !matches!(body.protocol.as_str(), "tcp" | "udp") {
         return Err(ApiError::Validation("protocol must be tcp or udp".into()));
     }
+    host_ip(&body.backend_ip)?;
     if !(1..=65535).contains(&body.gateway_port) || !(1..=65535).contains(&body.backend_port) {
         return Err(ApiError::Validation("ports must be between 1 and 65535".into()));
     }
@@ -106,19 +127,21 @@ pub async fn devices(State(state): State<AppState>, RequireAdmin(_): RequireAdmi
 
 pub async fn create(State(state): State<AppState>, RequireAdmin(actor): RequireAdmin, Json(body): Json<SaveHostAccessRule>) -> ApiResult<Json<HostAccessRule>> {
     validate(&body)?;
-    let server_id: Uuid = sqlx::query_scalar("SELECT id FROM servers WHERE is_active ORDER BY created_at LIMIT 1")
+    let (server_id, server_cidr): (Uuid, IpNetwork) = sqlx::query_as("SELECT id, cidr FROM servers WHERE is_active ORDER BY created_at LIMIT 1")
         .fetch_one(&state.pool).await?;
+    let gateway_ip = gateway_ip(server_cidr)?;
+    let backend_ip = host_ip(&body.backend_ip)?;
     let id = Uuid::now_v7();
     let mut tx = state.pool.begin().await?;
     sqlx::query(
         r#"INSERT INTO vpn_services
            (id, server_id, name, description, protocol, gateway_ip, gateway_port,
             backend_ip, backend_port, enabled, allow_all_peers, created_by)
-           VALUES ($1,$2,$3,$4,$5::vpn_transport_protocol,'10.0.0.1',$6,
-                   '192.168.1.20',$7,$8,$9,$10)"#,
+           VALUES ($1,$2,$3,$4,$5::vpn_transport_protocol,$6,$7,
+                   $8,$9,$10,$11,$12)"#,
     ).bind(id).bind(server_id).bind(body.name.trim()).bind(body.description.trim())
-      .bind(&body.protocol).bind(body.gateway_port).bind(body.backend_port)
-      .bind(body.enabled).bind(body.allow_all_peers).bind(actor.id).execute(&mut *tx).await?;
+      .bind(&body.protocol).bind(gateway_ip).bind(body.gateway_port).bind(backend_ip)
+      .bind(body.backend_port).bind(body.enabled).bind(body.allow_all_peers).bind(actor.id).execute(&mut *tx).await?;
     for device_id in &body.device_ids {
         sqlx::query("INSERT INTO vpn_service_devices (service_id, device_id) SELECT $1, id FROM devices WHERE id = $2 AND server_id = $3")
             .bind(id).bind(device_id).bind(server_id).execute(&mut *tx).await?;
@@ -132,15 +155,19 @@ pub async fn create(State(state): State<AppState>, RequireAdmin(actor): RequireA
 
 pub async fn update(State(state): State<AppState>, RequireAdmin(actor): RequireAdmin, Path(id): Path<Uuid>, Json(body): Json<SaveHostAccessRule>) -> ApiResult<Json<HostAccessRule>> {
     validate(&body)?;
+    let server_cidr: IpNetwork = sqlx::query_scalar("SELECT s.cidr FROM vpn_services v JOIN servers s ON s.id=v.server_id WHERE v.id=$1")
+        .bind(id).fetch_one(&state.pool).await?;
+    let gateway_ip = gateway_ip(server_cidr)?;
+    let backend_ip = host_ip(&body.backend_ip)?;
     let mut tx = state.pool.begin().await?;
     let changed = sqlx::query(
         r#"UPDATE vpn_services SET name=$2, description=$3,
-                  protocol=$4::vpn_transport_protocol, gateway_port=$5,
-                  backend_port=$6, enabled=$7, allow_all_peers=$8, updated_at=NOW()
-            WHERE id=$1 AND backend_ip='192.168.1.20'"#,
+                  protocol=$4::vpn_transport_protocol, gateway_ip=$5, gateway_port=$6,
+                  backend_ip=$7, backend_port=$8, enabled=$9, allow_all_peers=$10, updated_at=NOW()
+            WHERE id=$1"#,
     ).bind(id).bind(body.name.trim()).bind(body.description.trim()).bind(&body.protocol)
-      .bind(body.gateway_port).bind(body.backend_port).bind(body.enabled)
-      .bind(body.allow_all_peers).execute(&mut *tx).await?;
+      .bind(gateway_ip).bind(body.gateway_port).bind(backend_ip).bind(body.backend_port)
+      .bind(body.enabled).bind(body.allow_all_peers).execute(&mut *tx).await?;
     if changed.rows_affected() == 0 { return Err(ApiError::NotFound); }
     sqlx::query("DELETE FROM vpn_service_devices WHERE service_id=$1").bind(id).execute(&mut *tx).await?;
     for device_id in &body.device_ids {
@@ -155,7 +182,7 @@ pub async fn update(State(state): State<AppState>, RequireAdmin(actor): RequireA
 }
 
 pub async fn delete(State(state): State<AppState>, RequireAdmin(actor): RequireAdmin, Path(id): Path<Uuid>) -> ApiResult<Json<serde_json::Value>> {
-    let changed = sqlx::query("DELETE FROM vpn_services WHERE id=$1 AND backend_ip='192.168.1.20'").bind(id).execute(&state.pool).await?;
+    let changed = sqlx::query("DELETE FROM vpn_services WHERE id=$1").bind(id).execute(&state.pool).await?;
     if changed.rows_affected() == 0 { return Err(ApiError::NotFound); }
     audit::record(&state.pool, audit::AuditEntry { actor_user_id: Some(actor.id), action: "admin.host_access_deleted", target_type: Some("host_access_rule"), target_id: Some(id), metadata: json!({}), ip: None }).await?;
     reconcile(&state).await;

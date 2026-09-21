@@ -21,7 +21,7 @@ import type { HostAccessDevice, HostAccessRule, SaveHostAccessRule } from "@/lib
 import { cn } from "@/lib/utils"
 
 const newRule = (): SaveHostAccessRule => ({
-  name: "", description: "", protocol: "tcp", gateway_port: 0,
+  name: "", description: "", protocol: "tcp", gateway_port: 0, backend_ip: "",
   backend_port: 0, enabled: true, allow_all_peers: false, device_ids: [],
 })
 
@@ -46,7 +46,7 @@ export function HostAccessPage() {
     <StaggerItem>
       <Panel title="Access rules" sub="VPN gateway → host services" right={<Button onClick={openCreate}><IconPlus />New rule</Button>}>
         <p className="mb-4 text-xs text-muted-foreground">
-          The host destination is managed automatically as <span className="font-mono text-foreground">192.168.1.20</span>. Firewall output shows <span className="font-mono text-foreground">/32</span> because access is restricted to this single host.
+          The VPN gateway is derived automatically from the active server CIDR. Enter the destination host IPv4 address on each rule; firewall output uses <span className="font-mono text-foreground">/32</span> to restrict access to that exact host.
         </p>
         {(rules.isLoading || devices.isLoading) && <Skeleton className="h-44 rounded-none" />}
         {rules.data?.length === 0 && <EmptyState icon={IconLockAccess} title="No host access rules" description="VPN peers cannot reach host services until a rule is created." action={<Button onClick={openCreate}><IconPlus />New rule</Button>} />}
@@ -88,7 +88,7 @@ function RuleSheet({ open, onOpenChange, rule, devices, onSaved }: { open: boole
     onError: (error: Error) => toast.error(error.message),
   })
   const set = <K extends keyof SaveHostAccessRule>(key: K, value: SaveHostAccessRule[K]) => setForm((current) => ({ ...current, [key]: value }))
-  const valid = Boolean(form.name.trim() && form.gateway_port > 0 && form.backend_port > 0 && (form.allow_all_peers || form.device_ids.length > 0))
+  const valid = Boolean(form.name.trim() && form.backend_ip.trim() && form.gateway_port > 0 && form.backend_port > 0 && (form.allow_all_peers || form.device_ids.length > 0))
 
   return <Sheet open={open} onOpenChange={onOpenChange}>
     <SheetContent className="!w-full !max-w-none md:!w-[50vw]">
@@ -99,10 +99,11 @@ function RuleSheet({ open, onOpenChange, rule, devices, onSaved }: { open: boole
           <Field label="Protocol"><Select value={form.protocol} onValueChange={(value) => set("protocol", value as "tcp" | "udp")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="tcp">TCP</SelectItem><SelectItem value="udp">UDP</SelectItem></SelectContent></Select></Field>
           <Field label="VPN gateway port"><Input type="number" min={1} max={65535} value={form.gateway_port || ""} onChange={(event) => set("gateway_port", Number(event.target.value))} /></Field>
           <Field label="Host service port"><Input type="number" min={1} max={65535} value={form.backend_port || ""} onChange={(event) => set("backend_port", Number(event.target.value))} /></Field>
+          <Field label="Managed host IPv4 address"><Input value={form.backend_ip} onChange={(event) => set("backend_ip", event.target.value)} placeholder="192.168.1.20" inputMode="decimal" /></Field>
         </div>
         <Field label="Description"><Input value={form.description} onChange={(event) => set("description", event.target.value)} placeholder="What this rule provides" /></Field>
         <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 border bg-muted/30 p-3 font-mono text-xs">
-          <div><p className="mb-1 text-[10px] uppercase text-muted-foreground">VPN gateway</p><p>10.0.0.1:{form.gateway_port || "—"}</p></div><span className="text-muted-foreground">→</span><div><p className="mb-1 text-[10px] uppercase text-muted-foreground">Managed host</p><p>192.168.1.20:{form.backend_port || "—"}</p></div>
+          <div><p className="mb-1 text-[10px] uppercase text-muted-foreground">VPN gateway · automatic</p><p>{rule?.gateway_ip ?? "Derived from server CIDR"}:{form.gateway_port || "—"}</p></div><span className="text-muted-foreground">→</span><div><p className="mb-1 text-[10px] uppercase text-muted-foreground">Managed host</p><p>{form.backend_ip || "—"}:{form.backend_port || "—"}</p></div>
         </div>
         <ToggleRow title="Enabled" description="Apply this permission to the live firewall." checked={form.enabled} onCheckedChange={(value) => set("enabled", value)} />
         <ToggleRow title="All active VPN peers" description="Current and newly created peers automatically inherit access." checked={form.allow_all_peers} onCheckedChange={(value) => set("allow_all_peers", value)} />
@@ -142,5 +143,5 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 function toForm(rule: HostAccessRule): SaveHostAccessRule {
-  return { name: rule.name, description: rule.description, protocol: rule.protocol, gateway_port: rule.gateway_port, backend_port: rule.backend_port, enabled: rule.enabled, allow_all_peers: rule.allow_all_peers, device_ids: [...rule.device_ids] }
+  return { name: rule.name, description: rule.description, protocol: rule.protocol, gateway_port: rule.gateway_port, backend_ip: rule.backend_ip, backend_port: rule.backend_port, enabled: rule.enabled, allow_all_peers: rule.allow_all_peers, device_ids: [...rule.device_ids] }
 }
