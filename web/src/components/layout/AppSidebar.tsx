@@ -7,6 +7,7 @@ import {
   IconLayoutSidebar,
   IconLayoutSidebarLeftCollapse,
   IconLogin2,
+  IconLockAccess,
   IconRoute,
   IconRouter,
   IconSearch,
@@ -60,6 +61,7 @@ const ADMIN: NavEntry[] = [
   { to: "/admin/access-logs", label: "Access logs", icon: IconRoute },
   { to: "/admin/failed-logins", label: "Failed logins", icon: IconCircleDashedX },
   { to: "/admin/servers", label: "Servers", icon: IconRouter },
+  { to: "/admin/access-policy", label: "Access policy", icon: IconLockAccess },
   { to: "/admin/topology", label: "Topology", icon: IconHierarchy3 },
   { to: "/admin/finder", label: "Finder", icon: IconSearch },
 ]

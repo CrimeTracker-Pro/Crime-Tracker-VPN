@@ -189,6 +189,31 @@ services:
     cap_add: [NET_ADMIN]
     mem_limit: 192m
 
+  # Privileged firewall reconciler. It shares the API network namespace so
+  # nftables rules are applied where wg0 lives, but exposes no network service
+  # and accepts only typed policy objects from PostgreSQL.
+  policy:
+    container_name: crimetracker-vpn-policy
+    image: ${ZEROVPN_REGISTRY:-local}/crimetracker-vpn-policy:${ZEROVPN_IMAGE_TAG:-latest}
+    <<: [*default-restart, *default-logging]
+    env_file: .env
+    environment:
+      ZEROVPN_POLICY_INTERVAL_SECS: 15
+    network_mode: "service:api"
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 96m
+
   db:
     image: postgres:18-alpine
     <<: [*default-restart, *default-logging]

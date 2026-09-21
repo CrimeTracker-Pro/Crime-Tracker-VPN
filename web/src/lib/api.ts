@@ -84,6 +84,44 @@ export type UserStatus =
   | "pending_verification"
   | "deleted"
 
+export interface VpnPolicyService {
+  id: string
+  server_id: string
+  name: string
+  description: string
+  protocol: "tcp" | "udp"
+  gateway_ip: string
+  gateway_port: number
+  backend_ip: string
+  backend_port: number
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface VpnPolicyStatus {
+  server_id: string
+  desired_generation: number
+  applied_generation: number
+  reconciler_mode: "shadow" | "enforce"
+  healthy: boolean
+  drift_detected: boolean
+  active_checksum: string | null
+  last_error: string | null
+  last_reconciled_at: string | null
+}
+
+export interface VpnPolicyRevision {
+  id: string
+  server_id: string
+  revision_number: number
+  checksum: string
+  status: string
+  apply_error: string | null
+  created_at: string
+  applied_at: string | null
+}
+
 export interface PublicUser {
   id: string
   email: string
@@ -166,6 +204,27 @@ export const logout = () =>
  * inside a fetch().
  */
 export const googleStartUrl = `${BASE}/auth/google/start`
+
+export const adminListPolicyServices = () =>
+  apiFetch<VpnPolicyService[]>("/admin/policy/services")
+export const adminCreatePolicyService = (body: Omit<VpnPolicyService, "id" | "created_at" | "updated_at">) =>
+  apiFetch<{ id: string; status: string }>("/admin/policy/services", {
+    method: "POST",
+    body: JSON.stringify(body),
+  })
+export const adminDeletePolicyService = (id: string) =>
+  apiFetch<{ status: string }>(`/admin/policy/services/${id}`, { method: "DELETE" })
+export const adminSetPolicyAssignments = (id: string, body: { users: string[]; devices: string[]; groups: string[] }) =>
+  apiFetch<{ status: string }>(`/admin/policy/services/${id}/assignments`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  })
+export const adminPolicyStatus = () => apiFetch<VpnPolicyStatus[]>("/admin/policy/status")
+export const adminPolicyRevisions = () => apiFetch<VpnPolicyRevision[]>("/admin/policy/revisions")
+export const adminValidatePolicy = () => apiFetch<{ valid: boolean; errors: string[]; warnings: string[] }>("/admin/policy/validate", { method: "POST" })
+export const adminApplyPolicy = () => apiFetch<{ status: string }>("/admin/policy/apply", { method: "POST" })
+export const adminSetPolicyMode = (mode: "shadow" | "enforce") => apiFetch<{ status: string }>("/admin/policy/mode", { method: "POST", body: JSON.stringify({ mode }) })
+export const adminRollbackPolicy = (id: string) => apiFetch<{ status: string }>(`/admin/policy/rollback/${id}`, { method: "POST" })
 
 export const verifyInvitation = (token: string) =>
   apiFetch<{ status: string }>("/auth/invitations/verify", {

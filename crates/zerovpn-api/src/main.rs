@@ -497,6 +497,16 @@ async fn main() -> Result<()> {
                 .route("/admin/invitations/{id}/resend", post(routes::invitations::resend))
                 .route("/admin/invitations/{id}/link", post(routes::invitations::create_link))
                 .route("/admin/invitations/{id}/revoke", post(routes::invitations::revoke))
+                .route("/admin/policy/services", get(routes::policy::list_services).post(routes::policy::create_service))
+                .route("/admin/policy/services/{id}", axum::routing::delete(routes::policy::delete_service))
+                .route("/admin/policy/services/{id}/assignments", axum::routing::put(routes::policy::set_assignments))
+                .route("/admin/policy/validate", post(routes::policy::validate))
+                .route("/admin/policy/apply", post(routes::policy::request_apply))
+                .route("/admin/policy/status", get(routes::policy::status))
+                .route("/admin/policy/revisions", get(routes::policy::revisions))
+                .route("/admin/policy/active-rules", get(routes::policy::active_rules))
+                .route("/admin/policy/mode", post(routes::policy::set_mode))
+                .route("/admin/policy/rollback/{id}", post(routes::policy::rollback))
                 .route("/ws", get(routes::ws::ws)),
         )
         .layer(axum::middleware::from_fn_with_state(
