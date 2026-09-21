@@ -83,24 +83,77 @@ async fn run(cmd: &str, args: &[&str]) -> bool {
     }
 }
 
-/// Permit forwarding only between WireGuard peers. Client AllowedIPs is a
-/// routing hint, not authorization; these server-side rules prevent a client
-/// from reaching the LAN, Docker networks, or internet by widening it.
+/// Permit forwarding between WireGuard peers and, when configured, expose the
+/// host's SMB service through the VPN gateway address. Client AllowedIPs is a
+/// routing hint, not authorization; the final drop rules still prevent clients
+/// from reaching any other host service, LAN device, Docker network, or the
+/// internet by widening their configuration.
 async fn ensure_peer_only_forwarding(iface: &str) {
     const CHAIN: &str = "ZEROVPN-WG";
     const INPUT_CHAIN: &str = "ZEROVPN-WG-IN";
+    const DNAT_CHAIN: &str = "ZEROVPN-WG-DNAT";
+    const SNAT_CHAIN: &str = "ZEROVPN-WG-SNAT";
     let vpn_cidr = std::env::var("ZEROVPN_WG__VPN_CIDR")
         .unwrap_or_else(|_| "10.0.0.0/22".to_string());
+    let smb_target = std::env::var("ZEROVPN_WG__SMB_TARGET")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
 
     let _ = run("iptables", &["-N", CHAIN]).await;
     let _ = run("iptables", &["-F", CHAIN]).await;
     if !run("iptables", &["-C", "FORWARD", "-j", CHAIN]).await {
         let _ = run("iptables", &["-I", "FORWARD", "1", "-j", CHAIN]).await;
     }
-    let allowed = run(
+    let peer_traffic = run(
         "iptables",
         &["-A", CHAIN, "-i", iface, "-o", iface, "-s", &vpn_cidr, "-d", &vpn_cidr, "-j", "ACCEPT"],
     ).await;
+
+    // Always flush these dedicated chains so removing the SMB target disables
+    // the gateway cleanly on the next API restart.
+    let _ = run("iptables", &["-t", "nat", "-N", DNAT_CHAIN]).await;
+    let _ = run("iptables", &["-t", "nat", "-F", DNAT_CHAIN]).await;
+    if !run("iptables", &["-t", "nat", "-C", "PREROUTING", "-j", DNAT_CHAIN]).await {
+        let _ = run("iptables", &["-t", "nat", "-I", "PREROUTING", "1", "-j", DNAT_CHAIN]).await;
+    }
+    let _ = run("iptables", &["-t", "nat", "-N", SNAT_CHAIN]).await;
+    let _ = run("iptables", &["-t", "nat", "-F", SNAT_CHAIN]).await;
+    if !run("iptables", &["-t", "nat", "-C", "POSTROUTING", "-j", SNAT_CHAIN]).await {
+        let _ = run("iptables", &["-t", "nat", "-I", "POSTROUTING", "1", "-j", SNAT_CHAIN]).await;
+    }
+
+    let smb_traffic = if let Some(target) = &smb_target {
+        let target_cidr = format!("{target}/32");
+        let outbound = run(
+            "iptables",
+            &["-A", CHAIN, "-i", iface, "-s", &vpn_cidr, "-d", &target_cidr,
+              "-p", "tcp", "--dport", "445", "-m", "conntrack", "--ctstate",
+              "NEW,ESTABLISHED", "-j", "ACCEPT"],
+        ).await;
+        let returning = run(
+            "iptables",
+            &["-A", CHAIN, "-o", iface, "-s", &target_cidr, "-d", &vpn_cidr,
+              "-p", "tcp", "--sport", "445", "-m", "conntrack", "--ctstate",
+              "ESTABLISHED", "-j", "ACCEPT"],
+        ).await;
+
+        let destination = format!("{target}:445");
+        let dnat = run(
+            "iptables",
+            &["-t", "nat", "-A", DNAT_CHAIN, "-i", iface, "-d", "10.0.0.1/32",
+              "-p", "tcp", "--dport", "445", "-j", "DNAT", "--to-destination", &destination],
+        ).await;
+
+        let snat = run(
+            "iptables",
+            &["-t", "nat", "-A", SNAT_CHAIN, "-s", &vpn_cidr, "-d", &target_cidr,
+              "-p", "tcp", "--dport", "445", "-j", "MASQUERADE"],
+        ).await;
+        outbound && returning && dnat && snat
+    } else {
+        true
+    };
     let drop_from_vpn = run("iptables", &["-A", CHAIN, "-i", iface, "-j", "DROP"]).await;
     let drop_to_vpn = run("iptables", &["-A", CHAIN, "-o", iface, "-j", "DROP"]).await;
 
@@ -121,8 +174,8 @@ async fn ensure_peer_only_forwarding(iface: &str) {
         let _ = run("iptables", &["-t", "nat", "-D", "POSTROUTING", "-o", "eth0", "-j", "MASQUERADE"]).await;
     }
 
-    if allowed && drop_from_vpn && drop_to_vpn && ping_gateway && drop_gateway {
-        info!(interface = %iface, %vpn_cidr, "enabled peer-only WireGuard forwarding");
+    if peer_traffic && smb_traffic && drop_from_vpn && drop_to_vpn && ping_gateway && drop_gateway {
+        info!(interface = %iface, %vpn_cidr, smb_target = ?smb_target, "enabled restricted WireGuard forwarding");
     } else {
         warn!(interface = %iface, %vpn_cidr, "failed to install complete peer-only forwarding policy");
     }
