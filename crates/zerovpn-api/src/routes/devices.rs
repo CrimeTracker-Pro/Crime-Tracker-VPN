@@ -1006,14 +1006,7 @@ fn render_profile(
 
 /// Split-tunnel AllowedIPs (the VPN subnet) for an app-provisioned device.
 fn default_allowed_ips(server: &zerovpn_core::models::Server) -> Vec<String> {
-    let mut routes = vec![server.cidr.to_string()];
-    for route in &server.default_allowed_ips {
-        let route = route.trim();
-        if !route.is_empty() && !routes.iter().any(|existing| existing == route) {
-            routes.push(route.to_owned());
-        }
-    }
-    routes
+    vec![server.cidr.to_string()]
 }
 
 fn allowed_ips_for_device(device: &Device, server: &zerovpn_core::models::Server) -> Vec<String> {

@@ -67,7 +67,6 @@ function ServerEditor({ server }: { server: AdminServerRow }) {
   const [endpointPort, setEndpointPort] = useState(String(server.endpoint_port))
   const [mtu, setMtu] = useState(String(server.mtu))
   const [keepalive, setKeepalive] = useState(String(server.persistent_keepalive))
-  const [defaultAllowedIps, setDefaultAllowedIps] = useState(server.default_allowed_ips.join(", "))
   const [rotateOpen, setRotateOpen] = useState(false)
 
   const save = useMutation({
@@ -80,7 +79,6 @@ function ServerEditor({ server }: { server: AdminServerRow }) {
         endpoint_port: Number(endpointPort) || undefined,
         mtu: Number(mtu) || undefined,
         persistent_keepalive: Number.isFinite(ka) ? ka : undefined,
-        default_allowed_ips: defaultAllowedIps.split(/[\n,]/).map((route) => route.trim()).filter(Boolean),
       })
     },
     onSuccess: () => {
@@ -143,21 +141,6 @@ function ServerEditor({ server }: { server: AdminServerRow }) {
       <div className="flex flex-col gap-1.5">
         <Label className="zv-eyebrow">Public key</Label>
         <CopyableCode value={server.public_key} />
-      </div>
-      <div className="mt-3 flex flex-col gap-1.5">
-        <Label htmlFor={`allowed-ips-${server.id}`} className="zv-eyebrow">
-          Default AllowedIPs for new peers
-        </Label>
-        <Input
-          id={`allowed-ips-${server.id}`}
-          value={defaultAllowedIps}
-          onChange={(e) => setDefaultAllowedIps(e.target.value)}
-          placeholder="192.168.1.20/32, 192.168.1.0/24"
-          className="font-mono"
-        />
-        <p className="text-xs text-muted-foreground">
-          Comma-separated routes. The VPN subnet ({server.cidr}) is always included.
-        </p>
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
