@@ -13,6 +13,7 @@ import {
   adminApplyPolicy,
   adminCreatePolicyService,
   adminDeletePolicyService,
+  adminGetPolicyAssignments,
   adminListPolicyServices,
   adminListServers,
   adminPolicyRevisions,
@@ -86,10 +87,7 @@ export function AccessPolicyPage() {
     <StaggerItem>
       <Panel title="Services" sub={`${services.data?.length ?? 0} configured`}>
         <div className="divide-y border">
-          {services.data?.map((s) => <div key={s.id} className="flex items-center justify-between gap-3 p-3">
-            <div><p className="font-medium">{s.name}</p><p className="font-mono text-xs text-muted-foreground">{s.protocol.toUpperCase()} {s.gateway_ip}:{s.gateway_port} → {s.backend_ip}:{s.backend_port}</p></div>
-            <Button variant="destructive" size="sm" onClick={() => adminDeletePolicyService(s.id).then(refresh).catch((e: Error) => toast.error(e.message))}>Delete</Button>
-          </div>)}
+          {services.data?.map((s) => <ServiceRow key={s.id} service={s} refresh={refresh} />)}
           {!services.data?.length && <div className="p-6 text-center text-sm text-muted-foreground"><IconLockAccess className="mx-auto mb-2" />No service mappings yet.</div>}
         </div>
       </Panel>
@@ -97,4 +95,19 @@ export function AccessPolicyPage() {
     <StaggerItem><Panel title="Revision history" sub="validated and applied policy snapshots"><div className="space-y-2 font-mono text-xs">{revisions.data?.slice(0, 10).map((r) => <div key={r.id} className="flex justify-between border-b pb-2"><span>#{r.revision_number} · {r.status}</span><span>{r.checksum.slice(0, 12)}</span></div>)}</div></Panel></StaggerItem>
     <ConfirmDialog open={confirmEnforce} onOpenChange={setConfirmEnforce} title="Enable default-deny enforcement?" description="This atomically replaces the application-owned VPN firewall tables. Unassigned services and all other wg0 forwarding will be denied." confirmLabel="Enable enforcement" destructive onConfirm={() => enforce.mutate()} />
   </PageStagger>
+}
+
+function ServiceRow({ service: s, refresh }: { service: Awaited<ReturnType<typeof adminListPolicyServices>>[number]; refresh: () => void }) {
+  const assignments = useQuery({ queryKey: ["admin", "policy", "assignments", s.id], queryFn: () => adminGetPolicyAssignments(s.id) })
+  return <div className="flex items-start justify-between gap-3 p-3">
+    <div className="min-w-0">
+      <p className="font-medium">{s.name}</p>
+      <p className="font-mono text-xs text-muted-foreground">{s.protocol.toUpperCase()} {s.gateway_ip}:{s.gateway_port} → {s.backend_ip}:{s.backend_port}</p>
+      {assignments.data && <div className="mt-2 text-xs text-muted-foreground">
+        <p><span className="font-medium text-foreground">Assigned users:</span> {assignments.data.users.length ? assignments.data.users.map((u) => `${u.email}${u.role === "admin" ? " (admin)" : ""}`).join(", ") : "None"}</p>
+        <p className="mt-1"><span className="font-medium text-foreground">Effective devices ({assignments.data.devices.length}):</span> {assignments.data.devices.length ? assignments.data.devices.map((d) => `${d.name} (${d.allocated_ip})`).join(", ") : "None"}</p>
+      </div>}
+    </div>
+    <Button variant="destructive" size="sm" onClick={() => adminDeletePolicyService(s.id).then(refresh).catch((e: Error) => toast.error(e.message))}>Delete</Button>
+  </div>
 }
