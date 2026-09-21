@@ -104,9 +104,6 @@ const AdminTopologyPage = lazy(() =>
     default: m.AdminTopologyPage,
   }))
 )
-const AccessPolicyPage = lazy(() =>
-  import("@/pages/admin/AccessPolicy").then((m) => ({ default: m.AccessPolicyPage }))
-)
 
 /**
  * Root: bootstraps auth on mount, then renders the matching outlet
@@ -243,11 +240,6 @@ export const router = createBrowserRouter([
                 path: "/admin/servers",
                 handle: { breadcrumb: "Servers" },
                 element: <ServersPage />,
-              },
-              {
-                path: "/admin/access-policy",
-                handle: { breadcrumb: "VPN access policy" },
-                element: <AccessPolicyPage />,
               },
               {
                 path: "/admin/servers/:id",

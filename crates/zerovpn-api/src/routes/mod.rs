@@ -10,6 +10,5 @@ pub mod me;
 pub mod metrics;
 pub mod oauth;
 pub mod openapi;
-pub mod policy;
 pub mod totp;
 pub mod ws;

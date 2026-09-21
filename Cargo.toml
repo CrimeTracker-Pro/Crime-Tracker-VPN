@@ -10,7 +10,6 @@ members = [
     "crates/zerovpn-mail",
     "crates/zerovpn-api",
     "crates/zerovpn-worker",
-    "crates/zerovpn-policy",
     "crates/zerovpn-cli",
 ]
 exclude = ["tests"]

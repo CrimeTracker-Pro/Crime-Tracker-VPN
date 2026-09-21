@@ -12,11 +12,6 @@
 # slower, but the built image runs on the server). Set
 # ZEROVPN_BUILD_PLATFORM=linux/arm64 for a fast native image for `make up`.
 services:
-  policy:
-    build:
-      context: .
-      dockerfile: deploy/Dockerfile.policy
-      platforms: ["${ZEROVPN_BUILD_PLATFORM:-linux/amd64}"]
   api:
     build:
       context: .
