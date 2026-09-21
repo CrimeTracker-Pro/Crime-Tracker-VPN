@@ -56,6 +56,42 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T
 }
 
+export interface HostAccessRule {
+  id: string
+  name: string
+  description: string
+  protocol: "tcp" | "udp"
+  gateway_ip: string
+  gateway_port: number
+  backend_ip: string
+  backend_port: number
+  enabled: boolean
+  allow_all_peers: boolean
+  device_ids: string[]
+}
+
+export interface HostAccessDevice {
+  id: string
+  name: string
+  allocated_ip: string
+  status: string
+  owner_email: string
+}
+
+export type SaveHostAccessRule = Pick<HostAccessRule,
+  "name" | "description" | "protocol" | "gateway_port" | "backend_port" |
+  "enabled" | "allow_all_peers" | "device_ids"
+>
+
+export const adminListHostAccess = () => apiFetch<HostAccessRule[]>("/admin/host-access")
+export const adminListHostAccessDevices = () => apiFetch<HostAccessDevice[]>("/admin/host-access/devices")
+export const adminCreateHostAccess = (body: SaveHostAccessRule) =>
+  apiFetch<HostAccessRule>("/admin/host-access", { method: "POST", body: JSON.stringify(body) })
+export const adminUpdateHostAccess = (id: string, body: SaveHostAccessRule) =>
+  apiFetch<HostAccessRule>(`/admin/host-access/${id}`, { method: "PUT", body: JSON.stringify(body) })
+export const adminDeleteHostAccess = (id: string) =>
+  apiFetch<{ status: string }>(`/admin/host-access/${id}`, { method: "DELETE" })
+
 // --- types ---------------------------------------------------------------
 
 export type UserRole = "admin" | "user"

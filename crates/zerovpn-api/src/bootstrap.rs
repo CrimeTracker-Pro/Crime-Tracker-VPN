@@ -108,25 +108,13 @@ async fn resolve_ipv4_target(target: &str) -> Option<String> {
 /// routing hint, not authorization; the final drop rules still prevent clients
 /// from reaching any other host service, LAN device, Docker network, or the
 /// internet by widening their configuration.
-async fn ensure_peer_only_forwarding(iface: &str) {
+pub async fn ensure_peer_only_forwarding(pool: &PgPool, iface: &str) {
     const CHAIN: &str = "ZEROVPN-WG";
     const INPUT_CHAIN: &str = "ZEROVPN-WG-IN";
     const DNAT_CHAIN: &str = "ZEROVPN-WG-DNAT";
     const SNAT_CHAIN: &str = "ZEROVPN-WG-SNAT";
     let vpn_cidr = std::env::var("ZEROVPN_WG__VPN_CIDR")
         .unwrap_or_else(|_| "10.0.0.0/22".to_string());
-    let smb_target = std::env::var("ZEROVPN_WG__SMB_TARGET")
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
-    let ssh_target = std::env::var("ZEROVPN_WG__SSH_TARGET")
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
-    let ssh_allowed_ip = std::env::var("ZEROVPN_WG__SSH_ALLOWED_IP")
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty());
     let https_target = std::env::var("ZEROVPN_WG__HTTPS_TARGET")
         .ok()
         .map(|value| value.trim().to_string())
@@ -155,70 +143,73 @@ async fn ensure_peer_only_forwarding(iface: &str) {
         let _ = run("iptables", &["-t", "nat", "-I", "POSTROUTING", "1", "-j", SNAT_CHAIN]).await;
     }
 
-    let smb_traffic = if let Some(target) = &smb_target {
+    #[derive(sqlx::FromRow)]
+    struct HostRule {
+        protocol: String,
+        gateway_ip: IpNetwork,
+        gateway_port: i32,
+        backend_ip: IpNetwork,
+        backend_port: i32,
+        allow_all_peers: bool,
+        source_ip: Option<IpNetwork>,
+    }
+    let host_rules = sqlx::query_as::<_, HostRule>(
+        r#"SELECT s.protocol::text AS protocol, s.gateway_ip, s.gateway_port,
+                  s.backend_ip, s.backend_port, s.allow_all_peers,
+                  CASE WHEN s.allow_all_peers THEN NULL ELSE d.allocated_ip END AS source_ip
+             FROM vpn_services s
+        LEFT JOIN vpn_service_devices sd ON sd.service_id = s.id
+        LEFT JOIN devices d ON d.id = sd.device_id AND d.status = 'active'
+            WHERE s.enabled
+              AND (s.allow_all_peers OR d.id IS NOT NULL)
+         ORDER BY s.gateway_port, d.allocated_ip"#,
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap_or_else(|error| {
+        warn!(%error, "could not load host access rules; retaining default deny");
+        Vec::new()
+    });
+
+    let mut host_traffic = true;
+    for rule in &host_rules {
+        let target = rule.backend_ip.ip().to_string();
         let target_cidr = format!("{target}/32");
+        let gateway = format!("{}/32", rule.gateway_ip.ip());
+        let source = if rule.allow_all_peers {
+            vpn_cidr.clone()
+        } else if let Some(ip) = rule.source_ip {
+            format!("{}/32", ip.ip())
+        } else {
+            continue;
+        };
+        let gateway_port = rule.gateway_port.to_string();
+        let backend_port = rule.backend_port.to_string();
         let outbound = run(
             "iptables",
-            &["-A", CHAIN, "-i", iface, "-s", &vpn_cidr, "-d", &target_cidr,
-              "-p", "tcp", "--dport", "445", "-m", "conntrack", "--ctstate",
+            &["-A", CHAIN, "-i", iface, "-s", &source, "-d", &target_cidr,
+              "-p", &rule.protocol, "--dport", &backend_port, "-m", "conntrack", "--ctstate",
               "NEW,ESTABLISHED", "-j", "ACCEPT"],
         ).await;
         let returning = run(
             "iptables",
-            &["-A", CHAIN, "-o", iface, "-s", &target_cidr, "-d", &vpn_cidr,
-              "-p", "tcp", "--sport", "445", "-m", "conntrack", "--ctstate",
+            &["-A", CHAIN, "-o", iface, "-s", &target_cidr, "-d", &source,
+              "-p", &rule.protocol, "--sport", &backend_port, "-m", "conntrack", "--ctstate",
               "ESTABLISHED", "-j", "ACCEPT"],
         ).await;
-
-        let destination = format!("{target}:445");
+        let destination = format!("{target}:{}", rule.backend_port);
         let dnat = run(
             "iptables",
-            &["-t", "nat", "-A", DNAT_CHAIN, "-i", iface, "-d", "10.0.0.1/32",
-              "-p", "tcp", "--dport", "445", "-j", "DNAT", "--to-destination", &destination],
-        ).await;
-
-        let snat = run(
-            "iptables",
-            &["-t", "nat", "-A", SNAT_CHAIN, "-s", &vpn_cidr, "-d", &target_cidr,
-              "-p", "tcp", "--dport", "445", "-j", "MASQUERADE"],
-        ).await;
-        outbound && returning && dnat && snat
-    } else {
-        true
-    };
-
-    let ssh_traffic = if let (Some(target), Some(allowed_ip)) = (&ssh_target, &ssh_allowed_ip) {
-        let target_cidr = format!("{target}/32");
-        let allowed_cidr = format!("{allowed_ip}/32");
-        let outbound = run(
-            "iptables",
-            &["-A", CHAIN, "-i", iface, "-s", &allowed_cidr, "-d", &target_cidr,
-              "-p", "tcp", "--dport", "22", "-m", "conntrack", "--ctstate",
-              "NEW,ESTABLISHED", "-j", "ACCEPT"],
-        ).await;
-        let returning = run(
-            "iptables",
-            &["-A", CHAIN, "-o", iface, "-s", &target_cidr, "-d", &allowed_cidr,
-              "-p", "tcp", "--sport", "22", "-m", "conntrack", "--ctstate",
-              "ESTABLISHED", "-j", "ACCEPT"],
-        ).await;
-
-        let destination = format!("{target}:22");
-        let dnat = run(
-            "iptables",
-            &["-t", "nat", "-A", DNAT_CHAIN, "-i", iface, "-s", &allowed_cidr,
-              "-d", "10.0.0.1/32", "-p", "tcp", "--dport", "22", "-j", "DNAT",
-              "--to-destination", &destination],
+            &["-t", "nat", "-A", DNAT_CHAIN, "-i", iface, "-s", &source, "-d", &gateway,
+              "-p", &rule.protocol, "--dport", &gateway_port, "-j", "DNAT", "--to-destination", &destination],
         ).await;
         let snat = run(
             "iptables",
-            &["-t", "nat", "-A", SNAT_CHAIN, "-s", &allowed_cidr, "-d", &target_cidr,
-              "-p", "tcp", "--dport", "22", "-j", "MASQUERADE"],
+            &["-t", "nat", "-A", SNAT_CHAIN, "-s", &source, "-d", &target_cidr,
+              "-p", &rule.protocol, "--dport", &backend_port, "-j", "MASQUERADE"],
         ).await;
-        outbound && returning && dnat && snat
-    } else {
-        ssh_target.is_none() && ssh_allowed_ip.is_none()
-    };
+        host_traffic &= outbound && returning && dnat && snat;
+    }
 
     // HTTPS is the sole application path exposed through the gateway. The
     // public Traefik routers allow only this Docker-network source, so direct
@@ -276,8 +267,8 @@ async fn ensure_peer_only_forwarding(iface: &str) {
         let _ = run("iptables", &["-t", "nat", "-D", "POSTROUTING", "-o", "eth0", "-j", "MASQUERADE"]).await;
     }
 
-    if peer_traffic && smb_traffic && ssh_traffic && https_traffic && drop_from_vpn && drop_to_vpn && ping_gateway && drop_gateway {
-        info!(interface = %iface, %vpn_cidr, smb_target = ?smb_target, ssh_target = ?ssh_target, ssh_allowed_ip = ?ssh_allowed_ip, https_target = ?https_target, "enabled restricted WireGuard forwarding");
+    if peer_traffic && host_traffic && https_traffic && drop_from_vpn && drop_to_vpn && ping_gateway && drop_gateway {
+        info!(interface = %iface, %vpn_cidr, host_rule_count = host_rules.len(), https_target = ?https_target, "enabled restricted WireGuard forwarding");
     } else {
         warn!(interface = %iface, %vpn_cidr, "failed to install complete peer-only forwarding policy");
     }
@@ -365,7 +356,7 @@ async fn write_server_conf(private_key: &str, listen_port: i32, cidr: IpNetwork)
 /// Tear down and (re)bring-up `iface` from `conf_str`, then apply best-effort
 /// forwarding / NAT. The clean-slate down/del makes it safe to call
 /// on an interface that's already up (e.g. after a server key rotation).
-async fn bring_up_wg(iface: &str, conf_str: &str) {
+async fn bring_up_wg(pool: &PgPool, iface: &str, conf_str: &str) {
     let _ = run("wg-quick", &["down", conf_str]).await;
     let _ = run("ip", &["link", "del", iface]).await;
     if !run("wg-quick", &["up", conf_str]).await {
@@ -377,7 +368,7 @@ async fn bring_up_wg(iface: &str, conf_str: &str) {
     // Forward only peer-to-peer VPN traffic. The gateway address itself is
     // handled by INPUT and remains reachable for tunnel-health checks.
     let _ = run("sysctl", &["-w", "net.ipv4.ip_forward=1"]).await;
-    ensure_peer_only_forwarding(iface).await;
+    ensure_peer_only_forwarding(pool, iface).await;
 
 }
 
@@ -386,7 +377,7 @@ async fn bring_up_wg(iface: &str, conf_str: &str) {
 /// **Idempotent** — the interface is a kernel object in this container's netns
 /// and survives an api *process* restart, so a hot-reload does not flap the
 /// tunnel (we skip when it's already up).
-pub async fn ensure_wg_interface_up() {
+pub async fn ensure_wg_interface_up(pool: &PgPool) {
     if std::env::var("ZEROVPN_WG__BACKEND").as_deref() == Ok("noop") {
         return;
     }
@@ -396,17 +387,17 @@ pub async fn ensure_wg_interface_up() {
         info!(interface = %iface, "wg interface already up; leaving it in place");
         return;
     }
-    bring_up_wg(&iface, &server_conf_path().to_string_lossy()).await;
+    bring_up_wg(pool, &iface, &server_conf_path().to_string_lossy()).await;
 }
 
 /// Force-reapply the interface from the (freshly rewritten) `wg0.conf` — used
 /// after a server key rotation so the new key takes effect on the live tunnel.
-pub async fn reapply_wg_interface() {
+pub async fn reapply_wg_interface(pool: &PgPool) {
     if std::env::var("ZEROVPN_WG__BACKEND").as_deref() == Ok("noop") {
         return;
     }
     let iface = std::env::var("ZEROVPN_WG__INTERFACE").unwrap_or_else(|_| "wg0".into());
-    bring_up_wg(&iface, &server_conf_path().to_string_lossy()).await;
+    bring_up_wg(pool, &iface, &server_conf_path().to_string_lossy()).await;
 }
 
 /// Ensure the `default` server row exists AND that its private key lives in the

@@ -5,6 +5,7 @@ pub mod connections;
 pub mod devices;
 pub mod dto;
 pub mod health;
+pub mod host_access;
 pub mod invitations;
 pub mod me;
 pub mod metrics;

@@ -2060,7 +2060,7 @@ pub async fn rotate_server_keys(
             false
         }
     };
-    crate::bootstrap::reapply_wg_interface().await;
+    crate::bootstrap::reapply_wg_interface(&state.pool).await;
 
     audit::record(
         &state.pool,

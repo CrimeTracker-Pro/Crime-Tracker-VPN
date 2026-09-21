@@ -134,7 +134,7 @@ async fn main() -> Result<()> {
     // no separate `wg` container). No-op on the noop backend; idempotent across
     // hot-reload restarts. Runs before reconcile_peers so peers land on a live
     // interface.
-    bootstrap::ensure_wg_interface_up().await;
+    bootstrap::ensure_wg_interface_up(&pool).await;
     let allocators = bootstrap::build_ip_allocators(&pool)
         .await
         .context("build ip allocators")?;
@@ -367,6 +367,15 @@ async fn main() -> Result<()> {
                     get(routes::me::get_preferences).put(routes::me::set_preferences),
                 )
                 .route("/admin/stats", get(routes::admin::stats))
+                .route(
+                    "/admin/host-access",
+                    get(routes::host_access::list).post(routes::host_access::create),
+                )
+                .route("/admin/host-access/devices", get(routes::host_access::devices))
+                .route(
+                    "/admin/host-access/{id}",
+                    axum::routing::put(routes::host_access::update).delete(routes::host_access::delete),
+                )
                 .route("/admin/bandwidth", get(routes::admin::fleet_bandwidth))
                 .route(
                     "/admin/users",

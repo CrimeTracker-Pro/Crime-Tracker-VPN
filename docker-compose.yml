@@ -113,12 +113,8 @@ services:
       ZEROVPN_WG__BACKEND: shell
       ZEROVPN_WG__INTERFACE: wg0
       ZEROVPN_WG__VPN_CIDR: 10.0.0.0/22
-      # Expose only host Samba through 10.0.0.1:445; all other host/LAN traffic
-      # remains blocked by the WireGuard forwarding policy.
-      ZEROVPN_WG__SMB_TARGET: 192.168.1.20
-      # SSH is exposed through 10.0.0.1:22 only to the administrator peer.
-      ZEROVPN_WG__SSH_TARGET: 192.168.1.20
-      ZEROVPN_WG__SSH_ALLOWED_IP: 10.0.0.3
+      # Host access (SMB, SSH, and future services) is managed from the
+      # admin Host Access page and persisted in vpn_services.
       # CrimeTracker Pro is reached only through the VPN gateway at
       # https://10.0.0.1 (with private DNS resolving crimetracker.bha3.in).
       # Docker resolves the Traefik service on the shared `web` network.

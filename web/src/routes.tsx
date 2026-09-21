@@ -104,6 +104,9 @@ const AdminTopologyPage = lazy(() =>
     default: m.AdminTopologyPage,
   }))
 )
+const HostAccessPage = lazy(() =>
+  import("@/pages/admin/HostAccess").then((m) => ({ default: m.HostAccessPage }))
+)
 
 /**
  * Root: bootstraps auth on mount, then renders the matching outlet
@@ -235,6 +238,11 @@ export const router = createBrowserRouter([
                 path: "/admin/access-logs",
                 handle: { breadcrumb: "Access logs" },
                 element: <AccessLogsPage />,
+              },
+              {
+                path: "/admin/host-access",
+                handle: { breadcrumb: "Host access" },
+                element: <HostAccessPage />,
               },
               {
                 path: "/admin/servers",
