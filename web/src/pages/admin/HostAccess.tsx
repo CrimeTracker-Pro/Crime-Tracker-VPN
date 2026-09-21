@@ -91,7 +91,7 @@ function RuleSheet({ open, onOpenChange, rule, devices, onSaved }: { open: boole
   const valid = Boolean(form.name.trim() && form.gateway_port > 0 && form.backend_port > 0 && (form.allow_all_peers || form.device_ids.length > 0))
 
   return <Sheet open={open} onOpenChange={onOpenChange}>
-    <SheetContent className="w-full sm:max-w-xl">
+    <SheetContent className="w-full sm:max-w-none md:w-1/2">
       <SheetHeader className="border-b pr-12"><SheetTitle>{rule ? "Edit host access rule" : "New host access rule"}</SheetTitle><SheetDescription>Changes are written to the database and applied to the live firewall immediately.</SheetDescription></SheetHeader>
       <div className="flex-1 space-y-5 overflow-y-auto px-4 pb-4">
         <div className="grid gap-3 sm:grid-cols-2">
@@ -121,7 +121,7 @@ function DeviceMultiSelect({ devices, selected, onChange }: { devices: HostAcces
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild><Button variant="outline" className="w-full justify-between font-normal"><span className="inline-flex items-center gap-2"><IconDeviceLaptop className="size-4 text-muted-foreground" />{selected.length ? `${selected.length} device${selected.length === 1 ? "" : "s"} selected` : "Add devices"}</span><IconChevronDown className="size-4 text-muted-foreground" /></Button></PopoverTrigger>
       <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] p-0">
-        <Command><CommandInput placeholder="Search device, IP, or owner…" /><CommandList><CommandEmpty>No devices found.</CommandEmpty><CommandGroup>
+        <Command><CommandInput placeholder="Search device, IP, or owner…" /><CommandList className="max-h-[min(24rem,50vh)] overflow-y-auto overscroll-contain" onWheel={(event) => event.stopPropagation()}><CommandEmpty>No devices found.</CommandEmpty><CommandGroup>
           {devices.map((device) => <CommandItem key={device.id} value={`${device.name} ${device.allocated_ip} ${device.owner_email}`} data-checked={selected.includes(device.id)} onSelect={() => toggle(device.id)}>
             <span className={cn("flex size-4 items-center justify-center border", selected.includes(device.id) && "border-primary bg-primary text-primary-foreground")}>{selected.includes(device.id) && <IconCheck className="size-3" />}</span>
             <span className="min-w-0"><span className="block truncate">{device.name} · {device.allocated_ip}</span><span className="block truncate text-xs text-muted-foreground">{device.owner_email}</span></span>
