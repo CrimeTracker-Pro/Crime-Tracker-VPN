@@ -239,11 +239,11 @@ export const router = createBrowserRouter([
                 handle: { breadcrumb: "Access logs" },
                 element: <AccessLogsPage />,
               },
-              {
+              ...(import.meta.env.VITE_OPTION2_HOST_AGENT === "true" ? [] : [{
                 path: "/admin/host-access",
                 handle: { breadcrumb: "Host access" },
                 element: <HostAccessPage />,
-              },
+              }]),
               {
                 path: "/admin/servers",
                 handle: { breadcrumb: "Servers" },

@@ -15,6 +15,10 @@ path = "users_repo.rs"
 name = "devices_repo"
 path = "devices_repo.rs"
 
+[[test]]
+name = "peer_usage_checkpoints"
+path = "peer_usage_checkpoints.rs"
+
 [dev-dependencies]
 zerovpn-core = { path = "../crates/zerovpn-core" }
 zerovpn-db = { path = "../crates/zerovpn-db" }

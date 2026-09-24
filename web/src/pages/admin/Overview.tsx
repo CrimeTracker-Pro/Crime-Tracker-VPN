@@ -22,6 +22,7 @@ import {
   type AdminServerRow,
   adminFleetBandwidth,
   adminGetMaintenance,
+  adminHostAgentStatus,
   adminListServers,
   adminSetMaintenance,
   adminStats,
@@ -38,6 +39,12 @@ export function AdminOverviewPage() {
     queryKey: ["admin", "stats"],
     queryFn: adminStats,
     refetchInterval: 30_000,
+  })
+  const hostAgentQ = useQuery({
+    queryKey: ["admin", "host-agent-status"],
+    queryFn: adminHostAgentStatus,
+    enabled: import.meta.env.VITE_OPTION2_HOST_AGENT === "true",
+    refetchInterval: 5_000,
   })
 
   // Fleet-wide RX/TX over the last 30 days for the bandwidth KPI.
@@ -152,6 +159,19 @@ export function AdminOverviewPage() {
           }
         />
       </StaggerItem>
+
+      {import.meta.env.VITE_OPTION2_HOST_AGENT === "true" && (
+        <StaggerItem>
+          <div role="status" className="rounded-md border border-border px-4 py-3 text-sm">
+            <span className="font-semibold">Host VPN state: </span>
+            {hostAgentQ.isError ? "status unavailable" :
+              !hostAgentQ.data?.length ? "waiting for first reconciliation" :
+              hostAgentQ.data.map((item) =>
+                `${item.status} · applied ${item.applied_revision} / desired ${item.desired_revision}${item.last_error ? ` · ${item.last_error}` : ""}`
+              ).join("; ")}
+          </div>
+        </StaggerItem>
+      )}
 
       <StaggerItem>
         <KpiStrip>

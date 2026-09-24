@@ -48,7 +48,7 @@ impl AppState {
     pub fn new(
         pool: PgPool,
         allocators: Arc<IpAllocators>,
-        kek: Kek,
+        kek: Arc<Kek>,
         mailer: Option<Mailer>,
         public_url: String,
         wg: Arc<dyn WgController>,
@@ -59,7 +59,7 @@ impl AppState {
             pool,
             allocators,
             events,
-            kek: Arc::new(kek),
+            kek,
             mailer: mailer.map(Arc::new),
             public_url,
             wg,

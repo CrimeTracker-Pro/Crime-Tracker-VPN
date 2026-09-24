@@ -11,6 +11,7 @@ members = [
     "crates/zerovpn-api",
     "crates/zerovpn-worker",
     "crates/zerovpn-cli",
+    "crates/zerovpn-host-agent",
 ]
 exclude = ["tests"]
 
@@ -31,6 +32,7 @@ zerovpn-wg = { path = "crates/zerovpn-wg" }
 zerovpn-auth = { path = "crates/zerovpn-auth" }
 zerovpn-events = { path = "crates/zerovpn-events" }
 zerovpn-wire = { path = "crates/zerovpn-wire" }
+zerovpn-host-agent = { path = "crates/zerovpn-host-agent" }
 zerovpn-mail = { path = "crates/zerovpn-mail" }
 
 # Web framework

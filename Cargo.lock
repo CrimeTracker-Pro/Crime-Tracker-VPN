@@ -5701,6 +5701,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "askama 0.16.0",
+ "async-trait",
  "axum",
  "base64",
  "csv",
@@ -5719,6 +5720,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sqlx",
+ "tempfile",
  "thiserror 2.0.18",
  "time",
  "tokio",
@@ -5732,10 +5734,12 @@ dependencies = [
  "url",
  "utoipa",
  "uuid",
+ "zeroize",
  "zerovpn-auth",
  "zerovpn-core",
  "zerovpn-db",
  "zerovpn-events",
+ "zerovpn-host-agent",
  "zerovpn-mail",
  "zerovpn-wg",
  "zerovpn-wire",
@@ -5827,6 +5831,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "zerovpn-host-agent"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "libc",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
 name = "zerovpn-mail"
 version = "0.1.0"
 dependencies = [
@@ -5882,15 +5904,18 @@ dependencies = [
  "serde_json",
  "sqlx",
  "sysinfo",
+ "tempfile",
  "time",
  "tokio",
  "tokio-cron-scheduler",
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "zeroize",
  "zerovpn-core",
  "zerovpn-db",
  "zerovpn-events",
+ "zerovpn-host-agent",
  "zerovpn-mail",
  "zerovpn-wire",
 ]

@@ -48,9 +48,8 @@ pub enum Event {
 
     /// Server-wide health snapshot. Emitted by the worker every 5 s for
     /// admin dashboards. CPU%, memory, wg0 tunnel I/O ("Real I/O"),
-    /// container network I/O ("Net I/O"), uptime, peer count. CPU/memory/
-    /// net come from the Docker engine's `/containers/{name}/stats` API
-    /// for the VPN host container (so the numbers match `docker stats`).
+    /// durable VPN peer totals, uptime, peer count. CPU/memory come from
+    /// Docker stats for the configured container when available.
     /// `wg_rx_bps` / `wg_tx_bps` are the per-second rate on the `wg0`
     /// tunnel inside that container, derived by diffing cumulative byte
     /// counters between successive polls. All rates are per-second.
@@ -67,14 +66,10 @@ pub enum Event {
         wg_rx_bps: u64,
         /// wg0 tunnel: bytes transmitted per second.
         wg_tx_bps: u64,
-        /// Container Net I/O — **cumulative** bytes received since the
-        /// VPN host container started, summed across every interface
-        /// (eth0 + wg0 + …). Mirrors the "Net I/O" column from
-        /// `docker stats <name>` exactly, which is what the sidebar
-        /// renders. Use the diff against the previous tick if you need
-        /// a per-second rate.
+        /// Durable VPN peer bytes received by the server. Includes historical
+        /// device usage and survives container restarts. Not Docker Net I/O.
         net_rx_total_bytes: u64,
-        /// Container Net I/O — cumulative bytes transmitted, same shape.
+        /// Durable VPN peer bytes transmitted by the server.
         net_tx_total_bytes: u64,
         /// Process uptime in seconds (the worker's own — used in the
         /// "uptime dd hh mm ss" sidebar label).

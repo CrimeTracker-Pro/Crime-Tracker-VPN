@@ -58,6 +58,28 @@ fn notify_admin(state: &AppState, resource: ResourceKind, id: Option<Uuid>, acti
 }
 
 // ── WireGuard sync helpers ──────────────────────────────────────────────
+/// The durable desired/applied boundary for host-agent cutover monitoring.
+/// This is intentionally admin-only and does not expose token or peer secrets.
+pub async fn host_agent_status(
+    State(state): State<AppState>,
+    _admin: RequireAdmin,
+) -> ApiResult<impl IntoResponse> {
+    let rows: Vec<(Uuid, i64, i64, String, Option<String>, OffsetDateTime)> = sqlx::query_as(
+        "SELECT server_id, desired_revision, applied_revision, status, last_error, updated_at \
+           FROM host_agent_reconcile ORDER BY server_id")
+        .fetch_all(&state.pool).await?;
+    Ok(Json(rows.into_iter().map(|(server_id, desired_revision, applied_revision, status, last_error, updated_at)|
+        json!({
+            "server_id": server_id,
+            "desired_revision": desired_revision,
+            "applied_revision": applied_revision,
+            "status": status,
+            "last_error": last_error,
+            "updated_at": updated_at,
+        })
+    ).collect::<Vec<_>>()))
+}
+
 // Used whenever an account-level lifecycle change should ripple out to
 // the live WG interface — suspend/unsuspend/delete on a user. Each
 // helper is best-effort: we log peer-level failures but never abort the
@@ -866,11 +888,15 @@ pub async fn delete_user(
             ));
         }
     }
-    // Tear down the live WG peers AND release IPs BEFORE the purge — the
-    // hard delete drops the device rows, so we must read them while they
-    // still exist. Best-effort: failures log but don't block the deletion.
-    if let Ok(user_devices) = devices::list_for_user(&state.pool, target.id).await {
-        for d in user_devices {
+    // Snapshot device identifiers before the purge. Reconcile only after the
+    // DB deletion, so a whole-state host-agent snapshot cannot re-add peers
+    // that are about to be removed.
+    let user_devices = devices::list_for_user(&state.pool, target.id).await.unwrap_or_else(|error| {
+        warn!(%error, "delete_user: could not list peers before deletion");
+        Vec::new()
+    });
+    users::hard_delete(&state.pool, target.id, &target.email).await?;
+    for d in user_devices {
             if d.status == zerovpn_core::models::DeviceStatus::Active
                 && let Err(e) = state.wg.remove_peer(&d.public_key).await {
                     warn!(?e, device_id = %d.id, "delete_user: wg remove_peer failed");
@@ -878,12 +904,7 @@ pub async fn delete_user(
             if let Some(alloc) = state.allocators.get(d.server_id) {
                 let _ = alloc.release(d.allocated_ip.ip());
             }
-        }
     }
-    // Permanently purge the user + every row tied to them (devices cascade,
-    // logs/samples/failed-logins purged explicitly). The user row is gone
-    // afterward, so all their sessions die on the next request automatically.
-    users::hard_delete(&state.pool, target.id, &target.email).await?;
     // Recorded AFTER the purge (which deletes audit rows referencing the
     // target) so this deletion record survives as the accountability trail.
     audit::record(
@@ -2022,6 +2043,11 @@ pub async fn rotate_server_keys(
     RequireAdmin(actor): RequireAdmin,
     Path(id): Path<Uuid>,
 ) -> ApiResult<impl IntoResponse> {
+    if std::env::var("ZEROVPN_WG__BACKEND").as_deref() == Ok("host_agent") {
+        return Err(ApiError::Conflict(
+            "server key rotation requires a separately planned host-agent cutover".into(),
+        ));
+    }
     let server = servers::find_by_id(&state.pool, id)
         .await?
         .ok_or(ApiError::NotFound)?;

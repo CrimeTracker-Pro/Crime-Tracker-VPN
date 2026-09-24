@@ -1,0 +1,13 @@
+# syntax=docker/dockerfile:1.7
+# Build artifact only. The agent must run under systemd in the host namespace,
+# not as a long-lived Docker container.
+FROM rust:1.95.0-bookworm AS builder
+WORKDIR /work
+RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+COPY Cargo.toml Cargo.lock rust-toolchain.toml rustfmt.toml clippy.toml ./
+COPY crates ./crates
+COPY migrations ./migrations
+RUN cargo build --release --locked -p zerovpn-host-agent
+FROM scratch
+COPY --from=builder /work/target/release/zerovpn-host-agent /zerovpn-host-agent

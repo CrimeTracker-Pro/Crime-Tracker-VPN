@@ -1,8 +1,8 @@
 //! Real WG stats poller.
 //!
-//! When `ZEROVPN_WG__BACKEND` is a real backend (`shell` or `kernel`) AND
-//! the `wg` binary is in PATH, this task polls `wg show <iface> dump` every
-//! `ZEROVPN_STATS_INTERVAL_SECS` and emits `Event::StatsDelta` per peer,
+//! In legacy mode this task polls local `wg show <iface> dump`; in host-agent
+//! mode it reads the authenticated agent socket. Every
+//! `ZEROVPN_STATS_INTERVAL_SECS` it emits `Event::StatsDelta` per peer,
 //! while persisting endpoints, connection sessions, handshakes, bandwidth
 //! samples and server samples. In `noop` mode (dev/macOS, no interface)
 //! the poller doesn't run and none of this is captured.
@@ -10,9 +10,8 @@
 //! `wg show <iface> dump` columns (per peer):
 //!   public_key  preshared_key  endpoint  allowed_ips  latest_handshake  rx_bytes  tx_bytes  persistent_keepalive
 //!
-//! Cumulative counters; we keep an in-memory map of last-seen values per
-//! public key and emit deltas. Resets (rx/tx going backward) reset the
-//! baseline.
+//! Cumulative counters; durable checkpoints in PostgreSQL determine the
+//! accounted deltas, so a worker restart does not replay old usage.
 
 use std::{collections::HashMap, time::Duration};
 
@@ -23,12 +22,13 @@ use uuid::Uuid;
 use zerovpn_db::{
     PgPool,
     repos::{
-        audit, bandwidth, candles, connection_sessions, devices, peer_endpoint_history,
-        server_samples, servers, users,
+        audit, candles, connection_sessions, devices, peer_endpoint_history,
+        peer_usage_checkpoints, server_samples, servers,
     },
 };
 use zerovpn_db::repos::candles::CandleRow;
 use zerovpn_wire::{Event, NotifyLevel};
+use crate::wg_source::StatsSource;
 
 /// How long a peer can go without us seeing inbound bytes before we treat it
 /// as offline. Peer configs ship `PersistentKeepalive = 30s`, so a connected
@@ -43,15 +43,12 @@ const OFFLINE_AFTER_SECS: i64 = 90;
 /// activity (matches the previous behaviour / the frontend's connState).
 const HANDSHAKE_STALE_SECS: i64 = 180;
 
-/// Per-pubkey in-memory state between poll ticks. Holds the cumulative
-/// rx/tx counters (so we can emit deltas) and the last-observed
+/// Per-pubkey metadata between poll ticks. Holds the last-observed
 /// endpoint (so we only hit `devices` / `peer_endpoint_history` when it
 /// actually changes — per-tick polling at 1 s with hundreds of peers
 /// would otherwise hammer the DB pointlessly).
 #[derive(Default, Clone)]
 struct Cumulative {
-    rx: u64,
-    tx: u64,
     endpoint: Option<String>,
     /// Last-seen `latest_handshake` (unix seconds). Lets us emit a
     /// `HandshakeChange` only when the timestamp actually advances, instead
@@ -158,16 +155,6 @@ fn floor_minute(t: time::OffsetDateTime) -> time::OffsetDateTime {
     time::OffsetDateTime::from_unix_timestamp(secs - secs.rem_euclid(60)).unwrap_or(t)
 }
 
-pub fn enabled() -> bool {
-    // Poll whenever a *real* WG interface exists. Both `shell` and
-    // `kernel` backends bring up `wg0`, and `wg show <iface> dump` reads
-    // kernel state in either case — so production (kernel) must poll too.
-    // Only `noop` (dev/macOS, no interface) has nothing to read.
-    std::env::var("ZEROVPN_WG__BACKEND")
-        .map(|v| v == "shell" || v == "kernel")
-        .unwrap_or(false)
-}
-
 fn poll_interval() -> Duration {
     std::env::var("ZEROVPN_STATS_INTERVAL_SECS")
         .ok()
@@ -176,20 +163,10 @@ fn poll_interval() -> Duration {
         .unwrap_or(Duration::from_secs(1))
 }
 
-fn interface() -> String {
-    std::env::var("ZEROVPN_WG__INTERFACE").unwrap_or_else(|_| "wg0".into())
-}
-
-pub async fn run(pool: PgPool, tx: mpsc::Sender<(String, Event)>) {
+pub async fn run(pool: PgPool, tx: mpsc::Sender<(String, Event)>, mut source: StatsSource) {
     let interval = poll_interval();
-    let iface = interface();
-    info!(?interval, %iface, "real WG poller started");
+    info!(?interval, source = source.name(), "real WG poller started");
     let mut last: HashMap<String, Cumulative> = HashMap::new();
-    // Last-known cumulative lifetime totals per device, mirrored from the DB
-    // `accumulate_lifetime` / `seed_lifetime` writes. Lets every per-peer
-    // `StatsDelta` carry the absolute total — including idle ticks where we
-    // skip the DB write — so the client's "Total" tracks the server exactly.
-    let mut lifetimes: HashMap<Uuid, (u64, u64)> = HashMap::new();
     // Highest monthly-quota tier each user has already been notified about
     // (0 none · 1 ≥90% · 2 ≥100%). Lets us fire the warning/limit notification
     // exactly once per crossing and re-arm when usage resets next month.
@@ -214,9 +191,8 @@ pub async fn run(pool: PgPool, tx: mpsc::Sender<(String, Event)>) {
         match poll_once(
             &pool,
             &tx,
-            &iface,
+            &mut source,
             &mut last,
-            &mut lifetimes,
             &mut quota_tier,
             &mut last_activity,
             &mut prev_online,
@@ -235,29 +211,15 @@ pub async fn run(pool: PgPool, tx: mpsc::Sender<(String, Event)>) {
 async fn poll_once(
     pool: &PgPool,
     tx: &mpsc::Sender<(String, Event)>,
-    iface: &str,
+    source: &mut StatsSource,
     last: &mut HashMap<String, Cumulative>,
-    lifetimes: &mut HashMap<Uuid, (u64, u64)>,
     quota_tier: &mut HashMap<Uuid, u8>,
     last_activity: &mut HashMap<Uuid, i64>,
     prev_online: &mut HashMap<Uuid, bool>,
     candle_acc: &mut CandleAccumulator,
     interval: Duration,
 ) -> anyhow::Result<usize> {
-    // Run `wg show <iface> dump`. Output is tab-separated, one peer per line
-    // after a header line containing the interface keys. We skip the first
-    // line (interface own keys), then parse the rest.
-    let out = tokio::process::Command::new("wg")
-        .args(["show", iface, "dump"])
-        .output()
-        .await?;
-    if !out.status.success() {
-        return Err(anyhow::anyhow!(
-            "wg show failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        ));
-    }
-    let stdout = String::from_utf8_lossy(&out.stdout);
+    let snapshot = source.snapshot().await?;
     let mut peers_seen: usize = 0;
     let now = time::OffsetDateTime::now_utc();
     let now_ms = now.unix_timestamp() * 1000;
@@ -285,73 +247,56 @@ async fn poll_once(
     // Crime Tracker VPN deployment can map multiple servers onto one interface, so
     // we key by server_id from the pubkey index.
     let mut srv_totals: HashMap<Uuid, (u64, u64, u32, u32, u32)> = HashMap::new();
+    let mut srv_rates: HashMap<Uuid, (u64, u64)> = HashMap::new();
     let secs = interval.as_secs().max(1);
 
-    let mut lines = stdout.lines();
-    let _interface_line = lines.next();
-    for line in lines {
-        let cols: Vec<&str> = line.split('\t').collect();
-        if cols.len() < 8 {
-            continue;
-        }
-        let public_key = cols[0];
-        // cols[1] is the peer's pre-shared key (we don't capture it —
-        // it's a secret, not a log target). cols[2] is the public
-        // "ip:port" the peer last connected from; "(none)" when the
-        // peer hasn't completed a handshake yet.
-        let endpoint_raw = cols[2];
-        let endpoint_now: Option<String> = if endpoint_raw == "(none)" || endpoint_raw.is_empty() {
-            None
-        } else {
-            Some(endpoint_raw.to_string())
-        };
-        let latest_handshake: i64 = cols[4].parse().unwrap_or(0);
-        let rx_total: u64 = cols[5].parse().unwrap_or(0);
-        let tx_total: u64 = cols[6].parse().unwrap_or(0);
+    for peer in &snapshot.peers {
+        let public_key = peer.public_key.as_str();
+        let endpoint_now = peer.endpoint.clone();
+        let latest_handshake = peer.latest_handshake;
+        let rx_total = peer.rx_bytes;
+        let tx_total = peer.tx_bytes;
 
         let prev_entry = last.get(public_key).cloned();
-        // First sight of this peer in this worker session. We must NOT treat
-        // the full cumulative counter as a delta here — on a worker restart
-        // that would re-count the peer's entire history (a spike in the
-        // chart and a doubled lifetime total). Instead we establish the
-        // baseline this tick (delta 0) and reconcile the lifetime against
-        // the live counter via `seed_lifetime` below.
-        let first_sight = prev_entry.is_none();
         let prev = prev_entry.unwrap_or_default();
-        // Counter reset (peer reconnect) → take the new value as the delta.
-        let drx = if first_sight {
-            0
-        } else if rx_total >= prev.rx {
-            rx_total - prev.rx
-        } else {
-            rx_total
-        };
-        let dtx = if first_sight {
-            0
-        } else if tx_total >= prev.tx {
-            tx_total - prev.tx
-        } else {
-            tx_total
-        };
         let endpoint_changed = endpoint_now.is_some() && endpoint_now != prev.endpoint;
         // A newer handshake than we last saw for this peer — emitted below as
         // a HandshakeChange once we've resolved the peer to a device.
         let handshake_advanced = latest_handshake > prev.handshake;
-        last.insert(
-            public_key.to_string(),
-            Cumulative {
-                rx: rx_total,
-                tx: tx_total,
-                endpoint: endpoint_now.clone(),
-                handshake: latest_handshake,
-            },
-        );
-
         let Some((device_id, user_id, server_id)) = pk_index.get(public_key).copied() else {
             // Peer present in WG but not in our DB — possibly removed
             // mid-cycle. Skip.
             continue;
         };
+
+        let (Ok(raw_rx), Ok(raw_tx)) = (i64::try_from(rx_total), i64::try_from(tx_total)) else {
+            warn!(%device_id, "WireGuard counter exceeds database range");
+            continue;
+        };
+        // The host source includes an interface generation that survives
+        // agent restarts but changes when host wg0 is recreated.
+        let usage = match peer_usage_checkpoints::account(
+            pool, device_id, user_id, server_id, public_key, &snapshot.source_generation, raw_rx, raw_tx,
+            now, latest_handshake > 0,
+        ).await {
+            Ok(usage) => usage,
+            Err(e) => {
+                warn!(?e, %device_id, "durable WireGuard accounting failed");
+                continue;
+            }
+        };
+        let drx = usage.server_rx_delta as u64;
+        let dtx = usage.server_tx_delta as u64;
+        let rate_secs = usage.elapsed_seconds.max(secs);
+        let server_rx_bps = drx.saturating_mul(8) / rate_secs;
+        let server_tx_bps = dtx.saturating_mul(8) / rate_secs;
+        last.insert(
+            public_key.to_string(),
+            Cumulative {
+                endpoint: endpoint_now.clone(),
+                handshake: latest_handshake,
+            },
+        );
 
         // Persist the endpoint when it changed against our in-memory
         // baseline. Two writes: the latest-only column on `devices`
@@ -406,6 +351,9 @@ async fn poll_once(
         let entry = srv_totals.entry(server_id).or_default();
         entry.0 = entry.0.saturating_add(drx);
         entry.1 = entry.1.saturating_add(dtx);
+        let rates = srv_rates.entry(server_id).or_default();
+        rates.0 = rates.0.saturating_add(server_rx_bps);
+        rates.1 = rates.1.saturating_add(server_tx_bps);
         entry.2 += 1; // peer_count
         // online = handshake within last ~180s (WG default keepalive scope).
         // Record inbound activity (a keepalive counts) so we can detect a drop
@@ -570,80 +518,18 @@ async fn poll_once(
         // carries traffic for sessions that actually established.
         let report_rates = latest_handshake > 0;
 
-        // Persist the delta for historical aggregation. Without this row
-        // the hourly/daily rollups have nothing to sum, so the dashboard
-        // chart stays empty in real WG mode. Best-effort — a transient DB
-        // error doesn't stop the live broadcast below. Skipped for peers
-        // that haven't handshook yet so initiator-handshake bytes don't
-        // pollute the history.
-        if report_rates && (drx > 0 || dtx > 0)
-            && let Err(e) = bandwidth::insert_sample(
-                pool,
-                device_id,
-                now,
-                dev_rx_delta as i64,
-                dev_tx_delta as i64,
-            )
-            .await
-            {
-                warn!(?e, %device_id, "bandwidth sample insert failed");
-            }
-
-        // Maintain the device's authoritative lifetime totals (the "Total
-        // RX/TX" the UI shows). On first sight reconcile against the live WG
-        // counter (GREATEST — catch up downtime, keep the larger lifetime
-        // across a counter reset); on later ticks add this tick's delta. We
-        // mirror the result in `lifetimes` so idle ticks below can still
-        // report an accurate absolute total without a DB round-trip.
-        if report_rates {
-            if first_sight {
-                match devices::seed_lifetime(
-                    pool,
-                    device_id,
-                    dev_rx_total as i64,
-                    dev_tx_total as i64,
-                )
-                .await
-                {
-                    Ok((lr, lt)) => {
-                        lifetimes.insert(device_id, (lr.max(0) as u64, lt.max(0) as u64));
-                    }
-                    Err(e) => warn!(?e, %device_id, "seed_lifetime failed"),
-                }
-            } else if drx > 0 || dtx > 0 {
-                match devices::accumulate_lifetime(
-                    pool,
-                    device_id,
-                    dev_rx_delta as i64,
-                    dev_tx_delta as i64,
-                )
-                .await
-                {
-                    Ok((lr, lt)) => {
-                        lifetimes.insert(device_id, (lr.max(0) as u64, lt.max(0) as u64));
-                    }
-                    Err(e) => warn!(?e, %device_id, "accumulate_lifetime failed"),
-                }
-            }
-        }
-        let (total_rx_bytes, total_tx_bytes) =
-            lifetimes.get(&device_id).copied().unwrap_or((0, 0));
+        // The checkpoint, lifetime totals, monthly quotas, and bandwidth
+        // sample were committed together above. Use only committed deltas.
+        let total_rx_bytes = usage.device_lifetime_rx.max(0) as u64;
+        let total_tx_bytes = usage.device_lifetime_tx.max(0) as u64;
 
         // Per-user monthly quota: fold this device's traffic into the owner's
         // monthly counter and notify once on crossing 90% (warning) then 100%
         // (limit). `quota_tier` tracks the highest tier already announced so we
         // don't repeat, and re-arms when the month resets (usage drops back).
         if report_rates && (drx > 0 || dtx > 0) {
-            // Per-device monthly counter — feeds the per-device quota that the
-            // API's enforcement sweep reads. Fire-and-forget: the worker only
-            // measures; the API (which owns the WG controller) pauses/resumes.
-            if let Err(e) =
-                devices::add_monthly_usage(pool, device_id, (drx + dtx) as i64).await
-            {
-                warn!(?e, %device_id, "device monthly usage update failed");
-            }
-            match users::add_monthly_usage(pool, user_id, (drx + dtx) as i64).await {
-                Ok((current, Some(cap))) if cap > 0 => {
+            match usage.user_quota {
+                Some((current, Some(cap))) if cap > 0 => {
                     let tier: u8 = if current >= cap {
                         2
                     } else if current.saturating_mul(10) >= cap.saturating_mul(9) {
@@ -684,13 +570,12 @@ async fn poll_once(
                         quota_tier.insert(user_id, tier);
                     }
                 }
-                Ok(_) => {} // no cap configured → unlimited, nothing to warn
-                Err(e) => warn!(?e, %user_id, "monthly usage update failed"),
+                _ => {} // no cap configured → unlimited, nothing to warn
             }
         }
 
-        let rate_rx_bps = if report_rates { dev_rx_delta / secs * 8 } else { 0 };
-        let rate_tx_bps = if report_rates { dev_tx_delta / secs * 8 } else { 0 };
+        let rate_rx_bps = if report_rates { server_tx_bps } else { 0 };
+        let rate_tx_bps = if report_rates { server_rx_bps } else { 0 };
 
         // Fold this peer's rate into its in-progress 1-minute candle. Every
         // tick (including idle 0-rate ones) counts toward the sample so the
@@ -727,14 +612,14 @@ async fn poll_once(
     for s in all_servers {
         let (srv_rx, srv_tx, peers, online, handshakes) =
             srv_totals.get(&s.id).copied().unwrap_or((0, 0, 0, 0, 0));
-        let srv_rate_rx = (srv_rx / secs * 8) as i64;
-        let srv_rate_tx = (srv_tx / secs * 8) as i64;
+        let (srv_rate_rx, srv_rate_tx) =
+            srv_rates.get(&s.id).copied().unwrap_or((0, 0));
         // Server-aggregate candle: fold the summed peer rate for this minute.
         candle_acc
             .servers
             .entry(s.id)
             .or_default()
-            .observe(srv_rate_rx, srv_rate_tx);
+            .observe(srv_rate_rx as i64, srv_rate_tx as i64);
         if let Err(e) = server_samples::insert(
             pool,
             &server_samples::ServerSample {
@@ -758,8 +643,8 @@ async fn poll_once(
                     server_id: s.id,
                     total_rx_bytes: srv_rx,
                     total_tx_bytes: srv_tx,
-                    rate_rx_bps: srv_rx / secs * 8,
-                    rate_tx_bps: srv_tx / secs * 8,
+                    rate_rx_bps: srv_rate_rx,
+                    rate_tx_bps: srv_rate_tx,
                     peer_count: peers,
                     online_count: online,
                     handshake_count: handshakes,

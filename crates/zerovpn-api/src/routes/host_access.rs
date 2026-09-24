@@ -56,6 +56,15 @@ pub struct SaveHostAccessRule {
 
 fn default_true() -> bool { true }
 
+fn require_legacy_gateway() -> ApiResult<()> {
+    if std::env::var("ZEROVPN_WG__BACKEND").as_deref() == Ok("host_agent") {
+        return Err(ApiError::Conflict(
+            "Host Access rules are retired in host-agent mode; VPN peers can access host services".into(),
+        ));
+    }
+    Ok(())
+}
+
 fn host_ip(value: &str) -> ApiResult<IpNetwork> {
     let ip = value.trim().parse::<Ipv4Addr>()
         .map_err(|_| ApiError::Validation("managed host must be a valid IPv4 address".into()))?;
@@ -110,10 +119,12 @@ async fn list_rows(state: &AppState) -> ApiResult<Vec<HostAccessRule>> {
 }
 
 pub async fn list(State(state): State<AppState>, RequireAdmin(_): RequireAdmin) -> ApiResult<Json<Vec<HostAccessRule>>> {
+    require_legacy_gateway()?;
     Ok(Json(list_rows(&state).await?))
 }
 
 pub async fn devices(State(state): State<AppState>, RequireAdmin(_): RequireAdmin) -> ApiResult<Json<Vec<HostAccessDevice>>> {
+    require_legacy_gateway()?;
     let rows = sqlx::query_as(
         r#"SELECT d.id,
                   d.name,
@@ -126,6 +137,7 @@ pub async fn devices(State(state): State<AppState>, RequireAdmin(_): RequireAdmi
 }
 
 pub async fn create(State(state): State<AppState>, RequireAdmin(actor): RequireAdmin, Json(body): Json<SaveHostAccessRule>) -> ApiResult<Json<HostAccessRule>> {
+    require_legacy_gateway()?;
     validate(&body)?;
     let (server_id, server_cidr): (Uuid, IpNetwork) = sqlx::query_as("SELECT id, cidr FROM servers WHERE is_active ORDER BY created_at LIMIT 1")
         .fetch_one(&state.pool).await?;
@@ -154,6 +166,7 @@ pub async fn create(State(state): State<AppState>, RequireAdmin(actor): RequireA
 }
 
 pub async fn update(State(state): State<AppState>, RequireAdmin(actor): RequireAdmin, Path(id): Path<Uuid>, Json(body): Json<SaveHostAccessRule>) -> ApiResult<Json<HostAccessRule>> {
+    require_legacy_gateway()?;
     validate(&body)?;
     let server_cidr: IpNetwork = sqlx::query_scalar("SELECT s.cidr FROM vpn_services v JOIN servers s ON s.id=v.server_id WHERE v.id=$1")
         .bind(id).fetch_one(&state.pool).await?;
@@ -182,6 +195,7 @@ pub async fn update(State(state): State<AppState>, RequireAdmin(actor): RequireA
 }
 
 pub async fn delete(State(state): State<AppState>, RequireAdmin(actor): RequireAdmin, Path(id): Path<Uuid>) -> ApiResult<Json<serde_json::Value>> {
+    require_legacy_gateway()?;
     let changed = sqlx::query("DELETE FROM vpn_services WHERE id=$1").bind(id).execute(&state.pool).await?;
     if changed.rows_affected() == 0 { return Err(ApiError::NotFound); }
     audit::record(&state.pool, audit::AuditEntry { actor_user_id: Some(actor.id), action: "admin.host_access_deleted", target_type: Some("host_access_rule"), target_id: Some(id), metadata: json!({}), ip: None }).await?;

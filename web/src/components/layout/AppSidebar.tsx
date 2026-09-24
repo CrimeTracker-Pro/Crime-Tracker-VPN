@@ -59,7 +59,8 @@ const ADMIN: NavEntry[] = [
   { to: "/admin/audit", label: "Audit log", icon: IconClipboardList },
   { to: "/admin/sessions", label: "Sessions", icon: IconLogin2 },
   { to: "/admin/access-logs", label: "Access logs", icon: IconRoute },
-  { to: "/admin/host-access", label: "Host access", icon: IconLockAccess },
+  ...(import.meta.env.VITE_OPTION2_HOST_AGENT === "true" ? [] :
+    [{ to: "/admin/host-access", label: "Host access", icon: IconLockAccess }]),
   { to: "/admin/failed-logins", label: "Failed logins", icon: IconCircleDashedX },
   { to: "/admin/servers", label: "Servers", icon: IconRouter },
   { to: "/admin/topology", label: "Topology", icon: IconHierarchy3 },
@@ -228,10 +229,8 @@ function ServerStats() {
   // these are already per-second values — no further conversion needed.
   const wgRx = health.wgRxBps
   const wgTx = health.wgTxBps
-  // Net I/O is the cumulative-since-container-start figure straight from
-  // `docker stats <name>` — not a per-second rate. We render it verbatim
-  // (e.g. `↓ 39.4 MB · ↑ 13.1 MB`) so the sidebar matches what an operator
-  // sees on the host.
+  // These VPN peer totals come from Postgres and survive container restarts.
+  // They use the server perspective and are not a per-second rate.
   const netRxTotal = health.netRxTotalBytes
   const netTxTotal = health.netTxTotalBytes
 
@@ -254,7 +253,7 @@ function ServerStats() {
 
       <div className="pt-1">
         {/* Real I/O = wg0 tunnel rate. Title + ↓/↑ rate share the row so
-            the numbers sit in the corner, matching the Net I/O row below.
+            the numbers sit in the corner, matching the VPN total row below.
             Worker already gives us bytes/sec; format as a byte rate (no
             ÷8 since wg0 statistics are in bytes, not bits). */}
         <div className="flex items-center justify-between pb-0.5 font-mono text-[10px] tabular-nums">
@@ -276,15 +275,9 @@ function ServerStats() {
 
       <div className="pt-1">
         <div className="text-muted-foreground flex items-center justify-between font-mono text-[10px] tabular-nums">
-          <span className="uppercase tracking-[0.08em]">Net I/O</span>
+          <span className="uppercase tracking-[0.08em]">VPN total</span>
           <span className="text-foreground">
-            {/* Cumulative bytes-since-container-start, summed across every
-                interface. 1:1 with the "Net I/O" column from
-                `docker stats <name>` — no `/s` suffix since the figure
-                isn't a rate. `formatBytesSI` (decimal kB/MB/GB) is what
-                `docker stats` uses for that column; the binary
-                `formatBytes` would round ~5% smaller and make the
-                sidebar look out of sync with the CLI. */}
+            {/* Durable server-perspective peer bytes, not a rate. */}
             <span className="text-primary">↓</span> {formatBytesSI(netRxTotal)}
             <span className="text-muted-foreground px-1">·</span>
             <span className="text-primary">↑</span> {formatBytesSI(netTxTotal)}

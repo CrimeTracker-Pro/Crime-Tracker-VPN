@@ -17,6 +17,7 @@ mod docker_stats;
 mod retention;
 mod server_health;
 mod wg_poller;
+mod wg_source;
 mod destination_ingest;
 
 #[tokio::main]
@@ -77,11 +78,12 @@ async fn main() -> Result<()> {
         }
     }
 
-    if wg_poller::enabled() {
+    let wg_source = wg_source::StatsSource::from_env()?;
+    if let Some(source) = wg_source.clone() {
         let pool = pool.clone();
         let tx = tx.clone();
         tokio::spawn(async move {
-            wg_poller::run(pool, tx).await;
+            wg_poller::run(pool, tx, source).await;
         });
     } else {
         info!("WG stats disabled: no synthetic chart feed will be emitted until the real WG backend is enabled");
@@ -112,8 +114,9 @@ async fn main() -> Result<()> {
     {
         let pool = pool.clone();
         let tx = tx.clone();
+        let host_source = wg_source.filter(|source| matches!(source, wg_source::StatsSource::HostAgent { .. }));
         tokio::spawn(async move {
-            server_health::run(pool, tx).await;
+            server_health::run(pool, tx, host_source).await;
         });
     }
 

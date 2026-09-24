@@ -6,6 +6,7 @@ pub mod connection_sessions;
 pub mod devices;
 pub mod failed_logins;
 pub mod peer_endpoint_history;
+pub mod peer_usage_checkpoints;
 pub mod quota;
 pub mod server_samples;
 pub mod session_events;

@@ -8,7 +8,7 @@ import { create } from "zustand"
 // sizes.
 const HISTORY_CAP = 1800
 
-// The sidebar host-health sparklines (Real I/O, Net I/O) only ever show a
+// The sidebar host-health Real I/O sparkline only shows a
 // short rolling window, so we cap their histories far tighter than the
 // device charts above. At the ~5 s server_health cadence, 60 frames ≈ 5 min
 // — enough to read the recent trend without the trace stacking ever-denser
@@ -104,10 +104,8 @@ export interface ServerHealthLive {
   wgTxBps: number
   wgRxHistory: number[]
   wgTxHistory: number[]
-  /** Container Net I/O — **cumulative bytes** since container start,
-   *  summed across every interface (eth0 + wg0 + …). Matches the
-   *  "Net I/O" column from `docker stats <name>`. No rolling history
-   *  because cumulative totals aren't meaningfully sparkline-able. */
+  /** Durable server-perspective VPN peer totals from Postgres. No rolling
+   *  history because cumulative totals aren't meaningfully sparkline-able. */
   netRxTotalBytes: number
   netTxTotalBytes: number
   uptimeSec: number
@@ -482,4 +480,3 @@ export const useLiveStats = create<LiveStatsState>((set) => ({
     })
   },
 }))
-

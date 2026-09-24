@@ -129,21 +129,6 @@ impl DockerStats {
         self.memory_stats.limit
     }
 
-    /// Sum cumulative RX/TX across **every** interface — matches the
-    /// "Net I/O" column shown by `docker stats <name>` exactly. The
-    /// sidebar's "Real I/O · wg0" row separately surfaces just the
-    /// tunnel; if the operator wants to subtract wg0 themselves they can
-    /// eyeball the two rows. Returns cumulative bytes; the caller diffs
-    /// against the prior sample for the per-second rate.
-    pub fn net_io_total(&self) -> (u64, u64) {
-        let mut rx = 0u64;
-        let mut tx = 0u64;
-        for io in self.networks.values() {
-            rx = rx.saturating_add(io.rx_bytes);
-            tx = tx.saturating_add(io.tx_bytes);
-        }
-        (rx, tx)
-    }
 }
 
 /// Connect to the Docker engine over the local socket and fetch one stats

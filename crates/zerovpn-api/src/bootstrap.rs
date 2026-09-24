@@ -378,7 +378,7 @@ async fn bring_up_wg(pool: &PgPool, iface: &str, conf_str: &str) {
 /// and survives an api *process* restart, so a hot-reload does not flap the
 /// tunnel (we skip when it's already up).
 pub async fn ensure_wg_interface_up(pool: &PgPool) {
-    if std::env::var("ZEROVPN_WG__BACKEND").as_deref() == Ok("noop") {
+    if matches!(std::env::var("ZEROVPN_WG__BACKEND").as_deref(), Ok("noop" | "host_agent")) {
         return;
     }
     let iface = std::env::var("ZEROVPN_WG__INTERFACE").unwrap_or_else(|_| "wg0".into());
@@ -393,7 +393,7 @@ pub async fn ensure_wg_interface_up(pool: &PgPool) {
 /// Force-reapply the interface from the (freshly rewritten) `wg0.conf` — used
 /// after a server key rotation so the new key takes effect on the live tunnel.
 pub async fn reapply_wg_interface(pool: &PgPool) {
-    if std::env::var("ZEROVPN_WG__BACKEND").as_deref() == Ok("noop") {
+    if matches!(std::env::var("ZEROVPN_WG__BACKEND").as_deref(), Ok("noop" | "host_agent")) {
         return;
     }
     let iface = std::env::var("ZEROVPN_WG__INTERFACE").unwrap_or_else(|_| "wg0".into());

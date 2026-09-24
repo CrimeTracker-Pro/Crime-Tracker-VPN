@@ -1,0 +1,5 @@
+# Transitional worker only: durable peer checkpoints while the legacy API
+# still owns wg0. Do not use this overlay for the host-tunnel cutover.
+services:
+  worker:
+    image: local/crimetracker-vpn-worker:option2-accounting-20260925

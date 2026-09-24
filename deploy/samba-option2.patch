@@ -1,0 +1,15 @@
+--- smb.conf
++++ smb.conf
+@@ -4,9 +4,9 @@
+   security = user
+   map to guest = Never
+   guest account = nobody
+-  interfaces = 127.0.0.1 192.168.1.20
++  interfaces = 127.0.0.1 192.168.1.20 10.0.0.1
+-  bind interfaces only = yes
++  bind interfaces only = no
+-    hosts allow = 127.0.0.1 192.168.1.0/24 172.19.0.2
++    hosts allow = 127.0.0.1 192.168.1.0/24 172.19.0.2 10.0.0.0/22
+   server min protocol = NT1
+   server max protocol = SMB3
+   disable netbios = no

@@ -1,5 +1,9 @@
 # Runbook
 
+For the planned migration from container BoringTun to host kernel WireGuard,
+see [Option 2 migration preparation](option2-migration.md). The steps there
+must be completed before changing this runbook's current production commands.
+
 ## Dev vs. prod isolation
 
 Crime Tracker VPN ships a prod `docker-compose.yml` + single `.env`. Dev vs. prod is driven by `.env` values; the only dev-only extra is MailHog, layered in from `docker-compose.mail.yml` by the dev `make` targets (never by `make up-prod`):

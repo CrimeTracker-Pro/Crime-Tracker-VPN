@@ -3,33 +3,34 @@
 //! Every `TICK` seconds we publish one `Event::ServerHealth` per active
 //! server. The numbers are sourced as follows:
 //!
-//! * **CPU %, memory, Net I/O** — `docker stats` for the VPN host
+//! * **CPU %, memory** — `docker stats` for the VPN host
 //!   container (the api/api-dev container that owns `wg0`). Queried over
 //!   the local Docker socket so the figures match what the operator sees
 //!   from `docker stats <name>` on the host. The container name is taken
 //!   from `ZEROVPN_WORKER__VPN_HOST_CONTAINER`; absent → docker socket
 //!   missing → falls back to `sysinfo` so the panel is never empty.
 //!
-//! * **wg0 Real I/O** — per-second rate computed by diffing the cumulative
-//!   `rx_bytes`/`tx_bytes` counters on the `wg0` interface against the
-//!   previous tick. We try Docker stats' `networks.wg0` first (already
-//!   fetched) and fall back to `/sys/class/net/wg0/statistics/{rx,tx}_bytes`
-//!   so this works even when running outside Docker, as long as the
-//!   process can see the wg0 interface in its netns.
+//! * **VPN total** — durable host-perspective peer RX/TX from PostgreSQL.
+//!   This survives API and worker container recreation. It is not Docker's
+//!   container network I/O or the raw wg0 interface packet counter.
 //!
-//! All numbers on the wire are rates (per-second) and the diffing /
-//! previous-state bookkeeping happens here — consumers just plot the
-//! latest value.
+//! * **wg0 Real I/O** — per-second rate from cumulative interface counters.
+//!   In host-agent mode the agent reads host `wg0` and the rate baseline
+//!   resets on interface generation changes or missing samples. Legacy mode
+//!   uses Docker stats' `networks.wg0`, then local sysfs as a fallback.
+//!
+//! Only wg0 Real I/O is a rate; VPN total is cumulative.
 
 use std::time::{Duration, Instant};
 
 use sysinfo::System;
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
-use zerovpn_db::{PgPool, repos::servers};
+use zerovpn_db::{PgPool, repos::{peer_usage_checkpoints, servers}};
 use zerovpn_wire::Event;
 
 use crate::docker_stats;
+use crate::wg_source::StatsSource;
 
 const TICK: Duration = Duration::from_secs(5);
 
@@ -39,6 +40,7 @@ const TICK: Duration = Duration::from_secs(5);
 struct ByteCounters {
     rx: u64,
     tx: u64,
+    generation: Option<String>,
 }
 
 /// Read cumulative `rx_bytes` / `tx_bytes` for an interface from sysfs.
@@ -71,7 +73,17 @@ fn rate_per_sec(prev: u64, cur: u64, secs: u64) -> u64 {
     (cur - prev) / secs
 }
 
-pub async fn run(pool: PgPool, tx: mpsc::Sender<(String, Event)>) {
+fn interface_rates(prev: Option<&ByteCounters>, cur: Option<&ByteCounters>, secs: u64) -> (u64, u64) {
+    match (prev, cur) {
+        (Some(prev), Some(cur)) if prev.generation == cur.generation => (
+            rate_per_sec(prev.rx, cur.rx, secs),
+            rate_per_sec(prev.tx, cur.tx, secs),
+        ),
+        _ => (0, 0),
+    }
+}
+
+pub async fn run(pool: PgPool, tx: mpsc::Sender<(String, Event)>, mut host_source: Option<StatsSource>) {
     info!(?TICK, "server_health emitter started");
     let started = Instant::now();
 
@@ -98,9 +110,7 @@ pub async fn run(pool: PgPool, tx: mpsc::Sender<(String, Event)>) {
     sys.refresh_memory();
 
     // wg0 byte counters are diffed across ticks to compute a per-second
-    // rate ("Real I/O"). Net I/O is emitted as the raw cumulative total
-    // from Docker stats — matches the "Net I/O" column in `docker stats`
-    // and doesn't need a previous-tick sample.
+    // rate ("Real I/O"). The persistent VPN total is read from Postgres.
     let mut prev_wg: Option<ByteCounters> = None;
 
     let mut ticker = tokio::time::interval(TICK);
@@ -139,39 +149,27 @@ pub async fn run(pool: PgPool, tx: mpsc::Sender<(String, Event)>) {
             (pct, sys.used_memory(), sys.total_memory())
         };
 
-        // ── Net I/O (cumulative totals, no rate) ─────────────────────
-        // Mirror the "Net I/O" column from `docker stats <name>` 1:1:
-        // sum across every interface visible in the container (wg0
-        // included), and ship the raw cumulative-since-container-start
-        // figure. The sidebar formats it as `↓ 39.4 MB · ↑ 13.1 MB`
-        // to match what an operator sees on the host.
-        let (net_rx_total, net_tx_total) = if let Some(d) = &docker {
-            d.net_io_total()
-        } else {
-            // No docker stats → unknown. Reporting 0 is the truthful
-            // "we couldn't measure this" signal; the sidebar's loading
-            // text already covers the first-paint moment.
-            (0, 0)
-        };
-
         // ── wg0 Real I/O ──────────────────────────────────────────────
-        // Prefer Docker's `networks.wg0` (already fetched, no extra
-        // syscall). Fall back to reading sysfs directly — works when
-        // running outside docker as long as wg0 is in our netns.
-        let wg_cum = docker
-            .as_ref()
-            .and_then(|d| d.networks.get("wg0").map(|n| (n.rx_bytes, n.tx_bytes)))
-            .or_else(|| read_iface_counters("wg0"));
-        let (wg_rx_bps, wg_tx_bps) = match (wg_cum, prev_wg.as_ref()) {
-            (Some((rx, tx)), Some(p)) => {
-                (rate_per_sec(p.rx, rx, secs), rate_per_sec(p.tx, tx, secs))
+        // Host mode reads the host interface through the agent only. Legacy
+        // mode prefers Docker's networks.wg0, then local sysfs.
+        let wg_cum = if let Some(source) = host_source.as_mut() {
+            match source.snapshot().await {
+                Ok(snapshot) => snapshot.interface_counters.map(|(rx, tx)|
+                    (rx, tx, Some(snapshot.source_generation))),
+                Err(e) => {
+                    warn!(?e, "host-agent interface counters unavailable");
+                    None
+                }
             }
-            (Some(_), None) => (0, 0),
-            (None, _) => (0, 0),
+        } else {
+            docker.as_ref()
+                .and_then(|d| d.networks.get("wg0").map(|n| (n.rx_bytes, n.tx_bytes)))
+                .or_else(|| read_iface_counters("wg0"))
+                .map(|(rx, tx)| (rx, tx, None))
         };
-        if let Some((rx, tx)) = wg_cum {
-            prev_wg = Some(ByteCounters { rx, tx });
-        }
+        let current_wg = wg_cum.map(|(rx, tx, generation)| ByteCounters { rx, tx, generation });
+        let (wg_rx_bps, wg_tx_bps) = interface_rates(prev_wg.as_ref(), current_wg.as_ref(), secs);
+        prev_wg = current_wg;
 
         let uptime_sec = started.elapsed().as_secs();
         let now_ms = time::OffsetDateTime::now_utc().unix_timestamp() * 1000;
@@ -186,6 +184,14 @@ pub async fn run(pool: PgPool, tx: mpsc::Sender<(String, Event)>) {
             }
         };
         for s in active_servers {
+            let (net_rx_total, net_tx_total) =
+                match peer_usage_checkpoints::server_totals(&pool, s.id).await {
+                    Ok((rx, tx)) => (rx.max(0) as u64, tx.max(0) as u64),
+                    Err(e) => {
+                        warn!(?e, server = %s.id, "VPN total query failed");
+                        continue;
+                    }
+                };
             let active_peers =
                 zerovpn_db::repos::devices::count_active_for_server(&pool, s.id)
                     .await
@@ -222,5 +228,21 @@ pub async fn run(pool: PgPool, tx: mpsc::Sender<(String, Event)>) {
                 return;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn real_io_resets_on_generation_change_or_missing_sample() {
+        let first = ByteCounters { rx: 100, tx: 200, generation: Some("host:first".into()) };
+        let next = ByteCounters { rx: 150, tx: 230, generation: Some("host:first".into()) };
+        let recreated = ByteCounters { rx: 5, tx: 3, generation: Some("host:second".into()) };
+        assert_eq!(interface_rates(Some(&first), Some(&next), 5), (10, 6));
+        assert_eq!(interface_rates(Some(&next), Some(&recreated), 5), (0, 0));
+        assert_eq!(interface_rates(None, Some(&next), 5), (0, 0));
+        assert_eq!(interface_rates(Some(&next), None, 5), (0, 0));
     }
 }

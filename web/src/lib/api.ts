@@ -84,6 +84,15 @@ export type SaveHostAccessRule = Pick<HostAccessRule,
 >
 
 export const adminListHostAccess = () => apiFetch<HostAccessRule[]>("/admin/host-access")
+export interface HostAgentStatus {
+  server_id: string
+  desired_revision: number
+  applied_revision: number
+  status: "pending" | "applied" | "failed"
+  last_error: string | null
+  updated_at: string
+}
+export const adminHostAgentStatus = () => apiFetch<HostAgentStatus[]>("/admin/host-agent-status")
 export const adminListHostAccessDevices = () => apiFetch<HostAccessDevice[]>("/admin/host-access/devices")
 export const adminCreateHostAccess = (body: SaveHostAccessRule) =>
   apiFetch<HostAccessRule>("/admin/host-access", { method: "POST", body: JSON.stringify(body) })

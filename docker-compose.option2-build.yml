@@ -1,0 +1,12 @@
+# Add after docker-compose.build.yml when building Option 2 images.
+services:
+  api:
+    build:
+      dockerfile: deploy/Dockerfile.api-host
+  worker:
+    build:
+      dockerfile: deploy/Dockerfile.worker-host
+  frontend:
+    build:
+      args:
+        VITE_OPTION2_HOST_AGENT: "true"

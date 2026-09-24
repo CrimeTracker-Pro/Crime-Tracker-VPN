@@ -1,0 +1,40 @@
+# Explicit host-WireGuard cutover overlay. Do not apply until the runbook's
+# backup, key-identity, final-counter and firewall gates pass.
+services:
+  frontend:
+    image: local/crimetracker-vpn-frontend:option2-simple-20260925
+
+  api:
+    image: local/crimetracker-vpn-api:option2-simple-20260925
+    environment:
+      ZEROVPN_WG__BACKEND: host_agent
+      ZEROVPN_API__HOST_AGENT_SOCKET: /run/crimetracker-vpn/agent.sock
+      ZEROVPN_API__HOST_AGENT_READ_TOKEN_FILE: /run/zerovpn-agent-secrets/read.token
+      ZEROVPN_API__HOST_AGENT_APPLY_TOKEN_FILE: /run/zerovpn-agent-secrets/apply.token
+      ZEROVPN_EVENTS__SUBSCRIBER_CONNECT: tcp://worker:5555
+      WG_QUICK_USERSPACE_IMPLEMENTATION: !reset null
+    ports: !override
+      - "127.0.0.1:18080:8080"
+    volumes: !override
+      - /run/crimetracker-vpn:/run/crimetracker-vpn:ro
+      - ${VPN_AGENT_READ_TOKEN_FILE:?set VPN_AGENT_READ_TOKEN_FILE}:/run/zerovpn-agent-secrets/read.token:ro
+      - ${VPN_AGENT_APPLY_TOKEN_FILE:?set VPN_AGENT_APPLY_TOKEN_FILE}:/run/zerovpn-agent-secrets/apply.token:ro
+    cap_add: !override []
+    devices: !override []
+    sysctls: !override {}
+
+  worker:
+    image: local/crimetracker-vpn-worker:option2-simple-20260925
+    environment:
+      ZEROVPN_WORKER__WG_STATS_SOURCE: host_agent
+      ZEROVPN_WORKER__HOST_AGENT_SOCKET: /run/crimetracker-vpn/agent.sock
+      ZEROVPN_WORKER__HOST_AGENT_TOKEN_FILE: /run/zerovpn-agent-secrets/read.token
+      ZEROVPN_EVENTS__PUBLISHER_BIND: tcp://0.0.0.0:5555
+    network_mode: !reset null
+    networks:
+      - backend
+    volumes: !override
+      - /run/crimetracker-vpn:/run/crimetracker-vpn:ro
+      - ${VPN_AGENT_READ_TOKEN_FILE:?set VPN_AGENT_READ_TOKEN_FILE}:/run/zerovpn-agent-secrets/read.token:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    cap_add: !override []

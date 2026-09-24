@@ -21,6 +21,7 @@ use zerovpn_wire::Event;
 
 mod bootstrap;
 mod error;
+mod host_agent_controller;
 mod extractors;
 mod middleware;
 mod quota;
@@ -121,20 +122,29 @@ async fn main() -> Result<()> {
         .with_expiry(Expiry::OnInactivity(idle_expiry));
 
     let kek_b64 = env::var("ZEROVPN_KEK").context("ZEROVPN_KEK is required")?;
-    let kek = zerovpn_auth::kek::Kek::from_b64(&kek_b64)
-        .map_err(|e| anyhow::anyhow!("invalid KEK: {e}"))?;
+    let kek = std::sync::Arc::new(zerovpn_auth::kek::Kek::from_b64(&kek_b64)
+        .map_err(|e| anyhow::anyhow!("invalid KEK: {e}"))?);
 
+    let host_agent_mode = env::var("ZEROVPN_WG__BACKEND").as_deref() == Ok("host_agent");
     // The WG server keypair lives in the DB (KEK-encrypted); this creates or
     // loads it and restores wg0.conf from it, so the wg_config volume is only a
     // derived cache (the api holds no unique state).
-    bootstrap::ensure_default_server(&pool, &kek)
-        .await
-        .context("bootstrap server")?;
+    if host_agent_mode {
+        let active = zerovpn_db::repos::servers::list_active(&pool).await?;
+        anyhow::ensure!(active.len() == 1,
+            "host-agent mode requires exactly one existing active server; refusing to create or rotate a key");
+    } else {
+        bootstrap::ensure_default_server(&pool, &kek)
+            .await
+            .context("bootstrap server")?;
+    }
     // Bring wg0 up from the just-written config (the api is the WG host now —
     // no separate `wg` container). No-op on the noop backend; idempotent across
     // hot-reload restarts. Runs before reconcile_peers so peers land on a live
     // interface.
-    bootstrap::ensure_wg_interface_up(&pool).await;
+    if !host_agent_mode {
+        bootstrap::ensure_wg_interface_up(&pool).await;
+    }
     let allocators = bootstrap::build_ip_allocators(&pool)
         .await
         .context("build ip allocators")?;
@@ -200,7 +210,13 @@ async fn main() -> Result<()> {
         }
     };
 
-    let wg_controller = zerovpn_wg::control::from_env();
+    let wg_controller: std::sync::Arc<dyn zerovpn_wg::WgController> = if host_agent_mode {
+        let controller = std::sync::Arc::new(host_agent_controller::HostAgentController::from_env(pool.clone(), kek.clone())?);
+        controller.clone().spawn();
+        controller
+    } else {
+        zerovpn_wg::control::from_env()
+    };
 
     // Google OAuth is optional — when any of the three vars is missing the
     // /auth/google/* routes return 503 and the rest of the API boots fine.
@@ -236,7 +252,7 @@ async fn main() -> Result<()> {
     // Re-add active peers to the (possibly freshly recreated) WG interface so
     // existing tunnels keep working across restarts without re-creating each
     // device. Idempotent; best-effort.
-    if let Err(e) = bootstrap::reconcile_peers(&app_state.pool, &app_state.wg).await {
+    if !host_agent_mode && let Err(e) = bootstrap::reconcile_peers(&app_state.pool, &app_state.wg).await {
         warn!(?e, "startup peer reconcile failed");
     }
 
@@ -367,6 +383,7 @@ async fn main() -> Result<()> {
                     get(routes::me::get_preferences).put(routes::me::set_preferences),
                 )
                 .route("/admin/stats", get(routes::admin::stats))
+                .route("/admin/host-agent-status", get(routes::admin::host_agent_status))
                 .route(
                     "/admin/host-access",
                     get(routes::host_access::list).post(routes::host_access::create),
