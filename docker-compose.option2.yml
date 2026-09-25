@@ -32,7 +32,9 @@ services:
       ZEROVPN_EVENTS__PUBLISHER_BIND: tcp://0.0.0.0:5555
     network_mode: !reset null
     networks:
-      - backend
+      backend:
+        # Reserve the API's legacy-fixed .2 address across Docker boot order.
+        ipv4_address: 172.19.0.4
     volumes: !override
       - /run/crimetracker-vpn:/run/crimetracker-vpn:ro
       - ${VPN_AGENT_READ_TOKEN_FILE:?set VPN_AGENT_READ_TOKEN_FILE}:/run/zerovpn-agent-secrets/read.token:ro
