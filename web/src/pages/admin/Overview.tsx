@@ -9,6 +9,7 @@ import {
 } from "@tabler/icons-react"
 import { AnimatePresence, motion } from "motion/react"
 import { useMemo } from "react"
+import { Link } from "react-router"
 import { toast } from "sonner"
 
 import { CandleChart } from "@/components/charts/CandleChart"
@@ -17,6 +18,7 @@ import { PageStagger, StaggerItem } from "@/components/motion"
 import { Kpi, KpiStrip, PageHead, Panel, Pill } from "@/components/swiss"
 import { Button } from "@/components/ui/button"
 import { WithTooltip } from "@/components/ui/with-tooltip"
+import { useOnlineDeviceRows } from "@/hooks/useOnlineDeviceRows"
 import {
   ApiError,
   type AdminServerRow,
@@ -24,6 +26,7 @@ import {
   adminGetMaintenance,
   adminHostAgentStatus,
   adminListServers,
+  adminOnlineDevices,
   adminSetMaintenance,
   adminStats,
 } from "@/lib/api"
@@ -40,6 +43,12 @@ export function AdminOverviewPage() {
     queryFn: adminStats,
     refetchInterval: 30_000,
   })
+  const onlineDevicesQ = useQuery({
+    queryKey: ["admin", "online-devices"],
+    queryFn: adminOnlineDevices,
+    refetchInterval: 5_000,
+  })
+  const onlineRows = useOnlineDeviceRows(onlineDevicesQ.data)
   const hostAgentQ = useQuery({
     queryKey: ["admin", "host-agent-status"],
     queryFn: adminHostAgentStatus,
@@ -86,9 +95,8 @@ export function AdminOverviewPage() {
   const suspended = stats?.suspended ?? 0
   const pending = stats?.pending_verification ?? 0
   const totalDevices = stats?.devices_total ?? 0
-  // Durable, DB-computed online count (same 180s handshake rule as the user
-  // dashboard). Used as the KPI base so it's correct on first paint and
-  // survives refresh; live WS ticks below can only refine it upward.
+  // Durable DB count backs the KPI while the dedicated online-device roster
+  // is loading. Once loaded, the KPI and clickable roster share one filter.
   const onlineDb = stats?.online_now ?? 0
   const fleetRx = fleetBwQ.data?.rx_bytes ?? 0
   const fleetTx = fleetBwQ.data?.tx_bytes ?? 0
@@ -107,6 +115,9 @@ export function AdminOverviewPage() {
       ),
     [liveServers]
   )
+  const onlineCount = onlineDevicesQ.data
+    ? onlineRows.length
+    : statsQ.isLoading ? null : Math.max(onlineDb, onlineNow)
 
   return (
     <PageStagger>
@@ -194,12 +205,20 @@ export function AdminOverviewPage() {
           />
           <Kpi
             label="Online · now"
-            value={statsQ.isLoading ? "—" : Math.max(onlineDb, onlineNow)}
+            value={
+              <Link
+                to="/admin/online-devices"
+                aria-label="View all online devices"
+                className="hover:text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              >
+                {onlineCount ?? "—"}
+              </Link>
+            }
             unit={totalDevices > 0 ? `/ ${totalDevices}` : undefined}
             footL={
               maintOn
                 ? "writes blocked · maintenance ON"
-                : "live handshakes · fleet"
+                : "live handshakes · select count to view"
             }
             footR={maintOn ? "● maintenance" : undefined}
           />

@@ -1003,6 +1003,17 @@ export interface AdminStats {
  *  strip rather than summing client-side over a paginated list. */
 export const adminStats = () => apiFetch<AdminStats>("/admin/stats")
 
+export interface OnlineDeviceRow {
+  id: string
+  user_id: string
+  user_email: string
+  name: string
+  allocated_ip: string
+  last_handshake_at: string
+}
+export const adminOnlineDevices = () =>
+  apiFetch<OnlineDeviceRow[]>("/admin/online-devices")
+
 export interface AdminFleetBandwidth {
   rx_bytes: number
   tx_bytes: number
@@ -1275,8 +1286,8 @@ export interface FinderResponse {
   devices: FinderDeviceMatch[]
 }
 
-export const adminFinder = (q: string) =>
-  apiFetch<FinderResponse>(`/admin/finder?q=${encodeURIComponent(q)}`)
+export const finder = (q: string) =>
+  apiFetch<FinderResponse>(`/finder?q=${encodeURIComponent(q)}`)
 
 export interface MaintenanceState {
   maintenance_mode: boolean

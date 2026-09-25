@@ -2,7 +2,7 @@
    module's only export is `router` (not a component), so it can never fast-
    refresh regardless; the lazy() wrappers here don't change that. */
 import { lazy } from "react"
-import { createBrowserRouter, Outlet } from "react-router"
+import { createBrowserRouter, Navigate, Outlet } from "react-router"
 
 import { DashboardLayout } from "@/components/layout/DashboardLayout"
 import { PublicShell } from "@/components/layout/PublicShell"
@@ -43,9 +43,6 @@ const FinderPage = lazy(() =>
 const TopologyPage = lazy(() =>
   import("@/pages/app/Topology").then((m) => ({ default: m.TopologyPage }))
 )
-const UserFinderPage = lazy(() =>
-  import("@/pages/app/UserFinder").then((m) => ({ default: m.UserFinderPage }))
-)
 const ActivityPage = lazy(() =>
   import("@/pages/app/Activity").then((m) => ({ default: m.ActivityPage }))
 )
@@ -60,6 +57,11 @@ const DeviceDetailPage = lazy(() =>
 const AdminOverviewPage = lazy(() =>
   import("@/pages/admin/Overview").then((m) => ({
     default: m.AdminOverviewPage,
+  }))
+)
+const AdminOnlineDevicesPage = lazy(() =>
+  import("@/pages/admin/OnlineDevices").then((m) => ({
+    default: m.AdminOnlineDevicesPage,
   }))
 )
 const UsersPage = lazy(() =>
@@ -172,7 +174,7 @@ export const router = createBrowserRouter([
           {
             path: "/app/finder",
             handle: { breadcrumb: "Finder" },
-            element: <UserFinderPage />,
+            element: <FinderPage />,
           },
           {
             path: "/app/activity",
@@ -245,6 +247,11 @@ export const router = createBrowserRouter([
                 element: <HostAccessPage />,
               }]),
               {
+                path: "/admin/online-devices",
+                handle: { breadcrumb: "Online devices" },
+                element: <AdminOnlineDevicesPage />,
+              },
+              {
                 path: "/admin/servers",
                 handle: { breadcrumb: "Servers" },
                 element: <ServersPage />,
@@ -264,8 +271,7 @@ export const router = createBrowserRouter([
               },
               {
                 path: "/admin/finder",
-                handle: { breadcrumb: "Finder" },
-                element: <FinderPage />,
+                element: <Navigate to="/app/finder" replace />,
               },
             ],
           },

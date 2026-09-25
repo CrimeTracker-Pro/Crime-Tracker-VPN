@@ -98,6 +98,7 @@ use super::{admin, auth, bandwidth, connections, devices, dto, health, invitatio
         connections::list_for_user,
         connections::list_all,
         admin::list_devices,
+        admin::list_online_devices,
         admin::device_detail,
         admin::device_bandwidth,
         admin::device_endpoint_history,

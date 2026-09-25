@@ -11,6 +11,10 @@ test("login is Google-only and public account creation is unavailable", async ({
   }
   const dns = await request.get("/api/v1/devices/dns-check?name=probe.vpn.local")
   expect(dns.status()).toBe(404)
+  const onlineDevices = await request.get("/api/v1/admin/online-devices")
+  expect(onlineDevices.status()).toBe(401)
+  const finder = await request.get("/api/v1/finder?q=10.0.0.1")
+  expect(finder.status()).toBe(401)
 })
 
 test("an invalid invitation does not grant a session", async ({ page, request }) => {

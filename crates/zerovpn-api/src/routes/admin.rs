@@ -23,7 +23,7 @@ use zerovpn_wire::{ChangeAction, Event, ResourceKind};
 use crate::{
     error::{ApiError, ApiResult},
     extractors::auth::{
-        RequireAdmin, SESSION_KEY_PW_CHANGED_AT, SESSION_KEY_REAL_PW_CHANGED_AT,
+        CurrentUser, RequireAdmin, SESSION_KEY_PW_CHANGED_AT, SESSION_KEY_REAL_PW_CHANGED_AT,
         SESSION_KEY_REAL_USER_ID, SESSION_KEY_USER_ID,
     },
     routes::{
@@ -2293,6 +2293,49 @@ pub async fn list_devices(
     Ok(Json(out))
 }
 
+/// The same active + recent-handshake definition used by the overview's
+/// `online_now` count. A small, owner-labelled row is enough for live cards.
+#[derive(Debug, Serialize, ToSchema, sqlx::FromRow)]
+pub struct OnlineDeviceRow {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub user_email: String,
+    pub name: String,
+    pub allocated_ip: String,
+    #[serde(with = "time::serde::rfc3339")]
+    #[schema(value_type = String)]
+    pub last_handshake_at: OffsetDateTime,
+}
+
+#[utoipa::path(
+    get,
+    path = "/admin/online-devices",
+    tag = "Admin",
+    responses(
+        (status = 200, description = "Active devices with a handshake in the last 180 seconds", body = Vec<OnlineDeviceRow>),
+        (status = 403, description = "Not an admin"),
+    ),
+    security(("session_cookie" = [])),
+)]
+pub async fn list_online_devices(
+    State(state): State<AppState>,
+    RequireAdmin(_admin): RequireAdmin,
+) -> ApiResult<impl IntoResponse> {
+    let rows: Vec<OnlineDeviceRow> = sqlx::query_as(
+        r#"SELECT d.id, d.user_id, u.email::TEXT AS user_email, d.name,
+                  host(d.allocated_ip) AS allocated_ip, d.last_handshake_at
+             FROM devices d
+             JOIN users u ON u.id = d.user_id
+            WHERE u.deleted_at IS NULL
+              AND d.status = 'active'
+              AND d.last_handshake_at > now() - interval '180 seconds'
+            ORDER BY u.email, d.name"#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(rows))
+}
+
 /// Admin-only: WireGuard peer-endpoint history for a single device.
 /// Each row is one observation of a distinct `host:port` the device
 /// connected from, newest first. Capped at 200 rows.
@@ -2713,13 +2756,13 @@ ip: crate::routes::auth::client_ip(&headers),
 
 // ---- Finder (Phase 2 / Stage B) ------------------------------------------
 //
-// Cross-source admin search. Given a free-form query the endpoint
+// Cross-source search for authenticated users. Given a free-form query the endpoint
 // detects the most likely shape (IPv4/IPv6 host address, `host:port`
 // WG endpoint, or freetext) and runs targeted COUNT queries against
 // every log table that could match plus a small list of direct
 // user/device matches. The frontend renders the counts as
 // click-through cards that deep-link into the existing filtered
-// admin pages.
+// admin pages (when the caller is an admin).
 
 #[derive(Debug, Deserialize, IntoParams)]
 pub struct FinderQuery {
@@ -2808,35 +2851,36 @@ fn detect_kind(q: &str) -> &'static str {
 /// Cap regex length to bound the search the database has to do. POSIX
 /// regex on Postgres uses a backtracking engine, so a maliciously
 /// crafted pattern can pin a CPU; 200 chars is plenty for legitimate
-/// admin queries and keeps the worst case bounded.
+/// queries and keeps the worst case bounded.
 const FINDER_REGEX_MAX_LEN: usize = 200;
+const FINDER_QUERY_MAX_LEN: usize = 256;
 
 #[utoipa::path(
     get,
-    path = "/admin/finder",
-    tag = "Admin",
+    path = "/finder",
+    tag = "Finder",
     params(FinderQuery),
     responses(
-        (status = 200, description = "Cross-source admin search results", body = FinderResponse),
-        (status = 403, description = "Not an admin"),
+        (status = 200, description = "Cross-source search results", body = FinderResponse),
+        (status = 401, description = "Not authenticated"),
     ),
     security(("session_cookie" = [])),
 )]
 pub async fn finder(
     State(state): State<AppState>,
-    RequireAdmin(admin): RequireAdmin,
+    CurrentUser(user): CurrentUser,
     headers: axum::http::HeaderMap,
     Query(query): Query<FinderQuery>,
 ) -> ApiResult<impl IntoResponse> {
     let _ = zerovpn_db::repos::audit::record_with_ua(
         &state.pool,
         zerovpn_db::repos::audit::AuditEntry {
-            action: "admin_viewed_logs",
-            actor_user_id: Some(admin.id),
+            action: "finder_searched",
+            actor_user_id: Some(user.id),
             target_type: Some("system"),
             target_id: None,
             metadata: serde_json::json!({"path": "finder"}),
-ip: crate::routes::auth::client_ip(&headers),
+            ip: crate::routes::auth::client_ip(&headers),
         },
         crate::routes::auth::client_user_agent(&headers).as_deref(),
     )
@@ -2844,6 +2888,11 @@ ip: crate::routes::auth::client_ip(&headers),
 
     let q = query.q.unwrap_or_default();
     let q_trim = q.trim().to_string();
+    if q_trim.len() > FINDER_QUERY_MAX_LEN {
+        return Err(ApiError::Validation(format!(
+            "query too long (max {FINDER_QUERY_MAX_LEN} bytes)"
+        )));
+    }
     if q_trim.is_empty() {
         return Ok(Json(FinderResponse {
             query: q,

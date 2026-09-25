@@ -652,6 +652,6 @@ export function RouteSkeleton({ pathname }: { pathname: string }) {
   if (pathname === "/admin/audit") return <AdminTableSkeleton />
   if (pathname === "/admin/failed-logins") return <AdminTableSkeleton withKpis />
   if (pathname === "/admin/servers") return <ServersSkeleton />
-  if (pathname === "/admin/finder") return <FinderSkeleton />
+  if (pathname === "/admin/online-devices") return <FinderSkeleton />
   return <GenericRouteSkeleton />
 }

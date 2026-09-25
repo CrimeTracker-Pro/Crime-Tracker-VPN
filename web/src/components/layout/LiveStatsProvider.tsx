@@ -119,6 +119,7 @@ export function LiveStatsProvider() {
           }
           void qc.invalidateQueries({ queryKey: ["devices"] })
           void qc.invalidateQueries({ queryKey: ["device", event.device_id] })
+          void qc.invalidateQueries({ queryKey: ["admin", "online-devices"] })
           // The admin user-detail page lists this user's devices (status +
           // per-device quota) — refresh it instantly on a pause/resume/revoke.
           void qc.invalidateQueries({
@@ -149,6 +150,7 @@ export function LiveStatsProvider() {
           qc.setQueryData<PublicDevice>(["device", event.device_id], (prev) =>
             prev ? { ...prev, last_handshake_at: iso } : prev,
           )
+          void qc.invalidateQueries({ queryKey: ["admin", "online-devices"] })
           break
         }
         case "server_health":
@@ -193,6 +195,7 @@ export function LiveStatsProvider() {
                   : undefined
               void qc.invalidateQueries({ queryKey: ["devices"] })
               void qc.invalidateQueries({ queryKey: ["admin", "devices"] })
+              void qc.invalidateQueries({ queryKey: ["admin", "online-devices"] })
               void qc.invalidateQueries({ queryKey: ["me", "topology"] })
               // Topology Flows view: a new/changed peer means new possible
               // source IPs in conntrack, so refresh the connections lists.

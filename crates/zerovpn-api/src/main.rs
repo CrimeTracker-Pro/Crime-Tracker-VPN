@@ -361,6 +361,7 @@ async fn main() -> Result<()> {
                 .route("/me/server", get(routes::me::server_info))
                 .route("/me/usage", get(routes::me::usage))
                 .route("/me/activity", get(routes::me::activity))
+                .route("/finder", get(routes::admin::finder))
                 .route(
                     "/me/topology",
                     get(routes::me::get_topology).put(routes::me::set_topology),
@@ -442,7 +443,6 @@ async fn main() -> Result<()> {
                     "/admin/access-logs",
                     get(routes::admin::list_access_logs),
                 )
-                .route("/admin/finder", get(routes::admin::finder))
                 .route(
                     "/admin/maintenance",
                     get(routes::admin::get_maintenance).put(routes::admin::set_maintenance),
@@ -464,6 +464,7 @@ async fn main() -> Result<()> {
                     axum::routing::put(routes::admin::set_user_device_limit),
                 )
                 .route("/admin/devices", get(routes::admin::list_devices))
+                .route("/admin/online-devices", get(routes::admin::list_online_devices))
                 .route(
                     "/admin/devices/{id}",
                     get(routes::admin::device_detail).delete(routes::admin::admin_revoke_device),

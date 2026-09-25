@@ -26,19 +26,21 @@ import {
   type FinderResponse,
   type FinderUserMatch,
   type FinderDeviceMatch,
-  adminFinder,
+  finder,
 } from "@/lib/api"
+import { useAuth } from "@/stores/auth"
 
 /**
- * Admin Finder — paste an IP, a WG `host:port` endpoint, an email, a
+ * Shared Finder — paste an IP, a WG `host:port` endpoint, an email, a
  * device name, or a User-Agent fragment. The backend detects what you
  * gave it, runs targeted COUNT queries across every relevant log
  * table, and returns a small set of direct matches (users / devices)
- * plus per-table counts that deep-link into the filtered pages.
+ * plus per-table counts. Admins may deep-link into management pages.
  *
  * Phase 2 / Stage B — last item in the per-user logging stack.
  */
 export function FinderPage() {
+  const isAdmin = useAuth((s) => s.user?.role === "admin")
   const [input, setInput] = useState("")
   const [committed, setCommitted] = useState("")
   // Regex mode: when on, we wrap the input as `/.../` before submit so
@@ -64,8 +66,8 @@ export function FinderPage() {
   // Empty committed = no fetch. Page renders a help card instead.
   const queries = useQueries({
     queries: tokens.map((t) => ({
-      queryKey: ["admin", "finder", t] as const,
-      queryFn: () => adminFinder(t),
+      queryKey: ["finder", t] as const,
+      queryFn: () => finder(t),
       placeholderData: (prev: FinderResponse | undefined) => prev,
     })),
   })
@@ -117,9 +119,9 @@ export function FinderPage() {
     <PageStagger>
       <StaggerItem>
         <PageHead
-          eyebrow="Admin · Finder"
+          eyebrow="Workspace · Finder"
           title="Cross-source search"
-          sub="IP · endpoint · email · device name · User-Agent — admins click a count to pivot into the matching log page with the filter pre-applied"
+          sub="Search VPN IPs, endpoints, owners, devices, and activity. Admins can open matching management pages."
         />
       </StaggerItem>
 
@@ -227,12 +229,18 @@ export function FinderPage() {
             !anyLoading &&
             firstError == null &&
             tokens.length === 1 &&
-            results[0] && <FinderResults data={results[0]} />}
+            results[0] && (
+              <FinderResults data={results[0]} isAdmin={isAdmin} />
+            )}
           {committed !== "" &&
             !anyLoading &&
             firstError == null &&
             tokens.length > 1 && (
-              <MultiFinderResults tokens={tokens} results={results} />
+              <MultiFinderResults
+                tokens={tokens}
+                results={results}
+                isAdmin={isAdmin}
+              />
             )}
         </Panel>
       </StaggerItem>
@@ -285,7 +293,13 @@ function FinderHelp() {
   )
 }
 
-function FinderResults({ data }: { data: FinderResponse }) {
+function FinderResults({
+  data,
+  isAdmin,
+}: {
+  data: FinderResponse
+  isAdmin: boolean
+}) {
   const { kind, query, counts, users, devices } = data
   const anyCount =
     counts.audit_logs +
@@ -322,25 +336,25 @@ function FinderResults({ data }: { data: FinderResponse }) {
               icon={IconClipboardList}
               label="Audit"
               count={counts.audit_logs}
-              link={linkForAudit(kind, query)}
+              link={isAdmin ? linkForAudit(kind, query) : null}
             />
             <CountCard
               icon={IconLogin2}
               label="Sessions"
               count={counts.session_events}
-              link={linkForSessionEvents(kind, query)}
+              link={isAdmin ? linkForSessionEvents(kind, query) : null}
             />
             <CountCard
               icon={IconRoute}
               label="Access logs"
               count={counts.access_logs}
-              link={linkForAccessLogs(kind, query)}
+              link={isAdmin ? linkForAccessLogs(kind, query) : null}
             />
             <CountCard
               icon={IconUserSearch}
               label="Failed logins"
               count={counts.failed_logins}
-              link="/admin/failed-logins"
+              link={isAdmin ? "/admin/failed-logins" : null}
             />
             <CountCard
               icon={IconNetwork}
@@ -363,7 +377,7 @@ function FinderResults({ data }: { data: FinderResponse }) {
           <h3 className="zv-eyebrow mb-2">User matches</h3>
           <div className="flex flex-col divide-y divide-border border border-border">
             {users.map((u) => (
-              <UserMatchRow key={u.id} u={u} />
+              <UserMatchRow key={u.id} u={u} isAdmin={isAdmin} />
             ))}
           </div>
         </div>
@@ -372,7 +386,7 @@ function FinderResults({ data }: { data: FinderResponse }) {
       {devices.length > 0 && (
         <div>
           <h3 className="zv-eyebrow mb-2">Device matches · by owner</h3>
-          <DeviceOwnerGroups devices={devices} />
+          <DeviceOwnerGroups devices={devices} isAdmin={isAdmin} />
         </div>
       )}
     </div>
@@ -383,7 +397,13 @@ function FinderResults({ data }: { data: FinderResponse }) {
  *  section per owner, each holding live device cards (IP · rate · chart).
  *  This is the "who does this IP belong to" answer: the owner's email is
  *  the section header, the device holding the address sits inside. */
-function DeviceOwnerGroups({ devices }: { devices: FinderDeviceMatch[] }) {
+function DeviceOwnerGroups({
+  devices,
+  isAdmin,
+}: {
+  devices: FinderDeviceMatch[]
+  isAdmin: boolean
+}) {
   const groups = new Map<
     string,
     { email: string; devices: FinderDeviceMatch[] }
@@ -400,7 +420,7 @@ function DeviceOwnerGroups({ devices }: { devices: FinderDeviceMatch[] }) {
           key={userId}
           email={g.email}
           count={g.devices.length}
-          to={`/admin/users/${userId}`}
+          to={isAdmin ? `/admin/users/${userId}` : undefined}
         >
           {g.devices.map((d) => (
             <FinderDeviceCard
@@ -408,7 +428,8 @@ function DeviceOwnerGroups({ devices }: { devices: FinderDeviceMatch[] }) {
               deviceId={d.id}
               name={d.name}
               ip={d.allocated_ip}
-              to={`/admin/devices/${d.id}`}
+              to={isAdmin ? `/admin/devices/${d.id}` : undefined}
+              online={isAdmin ? undefined : null}
               note={
                 d.matched_on === "last_peer_endpoint"
                   ? "matched source endpoint"
@@ -429,9 +450,11 @@ function DeviceOwnerGroups({ devices }: { devices: FinderDeviceMatch[] }) {
 function MultiFinderResults({
   tokens,
   results,
+  isAdmin,
 }: {
   tokens: string[]
   results: (FinderResponse | undefined)[]
+  isAdmin: boolean
 }) {
   const devices: FinderDeviceMatch[] = []
   const seenDev = new Set<string>()
@@ -470,7 +493,12 @@ function MultiFinderResults({
         <h3 className="zv-eyebrow mb-2">Ownership</h3>
         <div className="flex flex-col divide-y divide-border border border-border">
           {tokens.map((t, i) => (
-            <TokenOwnershipRow key={t} token={t} result={results[i]} />
+            <TokenOwnershipRow
+              key={t}
+              token={t}
+              result={results[i]}
+              isAdmin={isAdmin}
+            />
           ))}
         </div>
       </div>
@@ -478,7 +506,7 @@ function MultiFinderResults({
       {devices.length > 0 && (
         <div>
           <h3 className="zv-eyebrow mb-2">Device matches · by owner</h3>
-          <DeviceOwnerGroups devices={devices} />
+          <DeviceOwnerGroups devices={devices} isAdmin={isAdmin} />
         </div>
       )}
 
@@ -487,7 +515,7 @@ function MultiFinderResults({
           <h3 className="zv-eyebrow mb-2">User matches</h3>
           <div className="flex flex-col divide-y divide-border border border-border">
             {users.map((u) => (
-              <UserMatchRow key={u.id} u={u} />
+              <UserMatchRow key={u.id} u={u} isAdmin={isAdmin} />
             ))}
           </div>
         </div>
@@ -508,9 +536,11 @@ function MultiFinderResults({
 function TokenOwnershipRow({
   token,
   result,
+  isAdmin,
 }: {
   token: string
   result: FinderResponse | undefined
+  isAdmin: boolean
 }) {
   const holder = result?.devices.find((d) => d.allocated_ip === token)
   const sourceOnly =
@@ -520,7 +550,7 @@ function TokenOwnershipRow({
   return (
     <div className="flex items-center justify-between gap-3 px-3 py-2 font-mono text-xs">
       <span className="shrink-0 text-foreground">{token}</span>
-      {holder ? (
+      {holder && isAdmin ? (
         <Link
           to={`/admin/users/${holder.user_id}`}
           className="min-w-0 truncate text-right text-muted-foreground hover:text-foreground"
@@ -529,6 +559,12 @@ function TokenOwnershipRow({
           <span className="px-1 opacity-60">·</span>
           {holder.name}
         </Link>
+      ) : holder ? (
+        <span className="min-w-0 truncate text-right text-muted-foreground">
+          <span className="text-foreground">{holder.user_email}</span>
+          <span className="px-1 opacity-60">·</span>
+          {holder.name}
+        </span>
       ) : sourceOnly ? (
         <span className="text-muted-foreground">
           connection source only — no peer holds it
@@ -577,20 +613,34 @@ function CountCard({
   return inner
 }
 
-function UserMatchRow({ u }: { u: FinderUserMatch }) {
-  return (
-    <Link
-      to={`/admin/users/${u.id}`}
-      className="flex items-center justify-between gap-3 px-3 py-2 transition hover:bg-muted/40"
-    >
+function UserMatchRow({
+  u,
+  isAdmin,
+}: {
+  u: FinderUserMatch
+  isAdmin: boolean
+}) {
+  const content = (
+    <>
       <div className="flex flex-col gap-0.5">
         <span className="font-mono text-sm">{u.email}</span>
         <span className="font-mono text-[10px] text-muted-foreground">
           {u.id.slice(0, 8)} · matched on {u.matched_on}
         </span>
       </div>
-      <IconChevronRight className="size-4 text-muted-foreground" />
+      {isAdmin && <IconChevronRight className="size-4 text-muted-foreground" />}
+    </>
+  )
+  const className = "flex items-center justify-between gap-3 px-3 py-2"
+  return isAdmin ? (
+    <Link
+      to={`/admin/users/${u.id}`}
+      className={`${className} transition hover:bg-muted/40`}
+    >
+      {content}
     </Link>
+  ) : (
+    <div className={className}>{content}</div>
   )
 }
 

@@ -16,12 +16,10 @@ import { useNow } from "@/hooks/useNow"
 import { formatBps } from "@/lib/units"
 import { useLiveStats } from "@/stores/liveStats"
 
-/* ── Shared building blocks for the Finder pages ───────────────────────
-   Both finders resolve IPs to devices and present them the same way:
+/* ── Shared building blocks for Finder results ─────────────────────────
+   Finder resolves IPs to devices and presents them the same way:
    an accordion section per owning user, with a compact live card per
-   device (name · IP · RX/TX rate · throughput sparkline). The admin
-   Finder feeds it fleet-wide matches; the user Finder feeds it the
-   caller's own devices. */
+   device (name · IP · RX/TX rate · throughput sparkline). */
 
 /** Frames fed to the sparkline — matches DeviceCard's window. */
 const CHART_WINDOW = 30
@@ -34,9 +32,9 @@ const LIVE_STALE_MS = 90_000
  * Compact live device card: name, VPN IP, current RX/TX rate, and a
  * throughput sparkline that streams from the live-stats store.
  *
- * `online` — pass the resolved state when the caller has a PublicDevice
- * (user finder, via useDeviceOnline). Omit it and the card falls back to
- * the live-frame heuristic (admin finder, where matches are lean rows).
+ * `online` — pass an explicit state when available. Omit it to use the
+ * live-frame heuristic; pass null when this caller has no visibility into
+ * another device's live status.
  */
 export function FinderDeviceCard({
   deviceId,
@@ -49,16 +47,19 @@ export function FinderDeviceCard({
   deviceId: string
   name: string
   ip: string
-  /** Detail-page link — /app/devices/:id or /admin/devices/:id. */
-  to: string
-  online?: boolean
+  /** Optional detail-page link; other users cannot open admin device pages. */
+  to?: string
+  /** null means the caller cannot see this device's live status. */
+  online?: boolean | null
   /** Small trailing annotation, e.g. `matched on last_peer_endpoint`. */
   note?: string
 }) {
   const live = useLiveStats((s) => s.devices[deviceId])
   const now = useNow()
-  const isOnline =
+  const statusUnavailable = online === null
+  const isOnline = !statusUnavailable && (
     online ?? (live != null && now - live.lastSeenTs < LIVE_STALE_MS && live.lastSeenTs > 0)
+  )
 
   const rxBps = isOnline ? (live?.rxBps ?? 0) : 0
   const txBps = isOnline ? (live?.txBps ?? 0) : 0
@@ -72,11 +73,8 @@ export function FinderDeviceCard({
   )
   const showChart = isOnline && (rxHistory.length > 0 || txHistory.length > 0)
 
-  return (
-    <Link
-      to={to}
-      className="border-border bg-card hover:border-foreground/30 group block border transition-colors"
-    >
+  const content = (
+    <>
       <div className="flex items-center gap-3 px-3 pt-2.5">
         <IconDeviceDesktop className="text-muted-foreground size-4 shrink-0" />
         <span className="min-w-0 flex-1 truncate text-sm font-medium">
@@ -96,7 +94,7 @@ export function FinderDeviceCard({
                 : "var(--status-offline)",
             }}
           />
-          {isOnline ? "online" : "offline"}
+          {statusUnavailable ? "status unavailable" : isOnline ? "online" : "offline"}
         </span>
       </div>
       <div className="text-muted-foreground flex items-center justify-between gap-3 px-3 pb-1.5 pt-1 font-mono text-[11px] tabular-nums">
@@ -123,12 +121,23 @@ export function FinderDeviceCard({
           <MiniAreaChart rxHistory={rxHistory} txHistory={txHistory} height={40} />
         ) : (
           <ChartPlaceholder
-            text={isOnline ? "connecting…" : "no live traffic"}
+            text={statusUnavailable ? "live traffic unavailable" : isOnline ? "connecting…" : "no live traffic"}
             height={40}
           />
         )}
       </div>
+    </>
+  )
+  const className = "border-border bg-card group block border"
+  return to ? (
+    <Link
+      to={to}
+      className={`${className} hover:border-foreground/30 transition-colors`}
+    >
+      {content}
     </Link>
+  ) : (
+    <div className={className}>{content}</div>
   )
 }
 

@@ -2,10 +2,10 @@
 # backup, key-identity, final-counter and firewall gates pass.
 services:
   frontend:
-    image: local/crimetracker-vpn-frontend:option2-simple-20260925
+    image: local/crimetracker-vpn-frontend:finder-online-20260925
 
   api:
-    image: local/crimetracker-vpn-api:option2-simple-20260925
+    image: local/crimetracker-vpn-api:finder-online-20260925
     environment:
       ZEROVPN_WG__BACKEND: host_agent
       ZEROVPN_API__HOST_AGENT_SOCKET: /run/crimetracker-vpn/agent.sock

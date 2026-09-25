@@ -64,7 +64,6 @@ const ADMIN: NavEntry[] = [
   { to: "/admin/failed-logins", label: "Failed logins", icon: IconCircleDashedX },
   { to: "/admin/servers", label: "Servers", icon: IconRouter },
   { to: "/admin/topology", label: "Topology", icon: IconHierarchy3 },
-  { to: "/admin/finder", label: "Finder", icon: IconSearch },
 ]
 
 export function AppSidebar() {
